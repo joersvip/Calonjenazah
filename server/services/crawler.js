@@ -1,0 +1,203 @@
+const Parser = require('rss-parser');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const db = require('../db');
+const { scrapeNewsFromUrl } = require('./scraper');
+
+const rssParser = new Parser({
+  customFields: {
+    item: [
+      ['media:content', 'mediaContent'],
+      ['enclosure', 'enclosure'],
+      ['content:encoded', 'contentEncoded']
+    ]
+  }
+});
+
+/**
+ * Fetch and crawl news items from an RSS feed or URL
+ * @param {string} sourceUrl - RSS feed URL or website
+ * @param {string} sourceName - Source display name
+ * @returns {Promise<Array>} Array of crawled articles
+ */
+async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
+  const crawledItems = [];
+
+  try {
+    // Attempt RSS parsing first
+    const feed = await rssParser.parseURL(sourceUrl);
+    const sourceTitle = sourceName || feed.title || 'Feed Berita';
+
+    for (const item of feed.items) {
+      // Determine image
+      let imageUrl = '';
+      if (item.enclosure && item.enclosure.url && item.enclosure.url.match(/\.(jpg|jpeg|png|webp)/i)) {
+        imageUrl = item.enclosure.url;
+      } else if (item.mediaContent && item.mediaContent.$ && item.mediaContent.$.url) {
+        imageUrl = item.mediaContent.$.url;
+      } else if (item.content || item.contentEncoded) {
+        const $ = cheerio.load(item.contentEncoded || item.content || '');
+        imageUrl = $('img').first().attr('src') || '';
+      }
+
+      const summary = item.contentSnippet || item.summary || item.title;
+      const cleanSummary = summary ? summary.replace(/<[^>]*>/g, '').trim().substring(0, 280) : '';
+
+      crawledItems.push({
+        source_feed: sourceTitle,
+        title: item.title ? item.title.trim() : 'Berita Tanpa Judul',
+        link: item.link ? item.link.trim() : '',
+        summary: cleanSummary,
+        content: item.contentEncoded || item.content || cleanSummary,
+        image_url: imageUrl || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
+        pub_date: item.pubDate || item.isoDate || new Date().toISOString()
+      });
+    }
+  } catch (rssError) {
+    // Fallback: If not standard RSS, try HTML news list crawling
+    try {
+      const response = await axios.get(sourceUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        },
+        timeout: 10000
+      });
+
+      const $ = cheerio.load(response.data);
+      const origin = new URL(sourceUrl).origin;
+
+      $('article, .article, .news-item, .media, .card').slice(0, 15).each((i, el) => {
+        const linkEl = $(el).find('a[href]').first();
+        let href = linkEl.attr('href');
+        if (!href) return;
+        if (href.startsWith('/')) href = origin + href;
+
+        const title = $(el).find('h1, h2, h3, h4, .title').first().text().trim() || linkEl.text().trim();
+        const snippet = $(el).find('p, .summary, .description').first().text().trim();
+        let img = $(el).find('img').first().attr('src') || $(el).find('img').first().attr('data-src') || '';
+        if (img && img.startsWith('/')) img = origin + img;
+
+        if (title && href && href.startsWith('http')) {
+          crawledItems.push({
+            source_feed: sourceName || 'Web Scraper',
+            title,
+            link: href,
+            summary: snippet.substring(0, 200),
+            content: snippet,
+            image_url: img || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
+            pub_date: new Date().toISOString()
+          });
+        }
+      });
+    } catch (htmlErr) {
+      throw new Error(`Gagal melakukan crawling: ${rssError.message}`);
+    }
+  }
+
+  // Save unique crawled articles to database
+  const insertStmt = db.prepare(`
+    INSERT OR IGNORE INTO crawled_articles (
+      source_feed, title, link, summary, content, image_url, pub_date, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+  `);
+
+  let insertedCount = 0;
+  for (const item of crawledItems) {
+    if (item.title && item.link) {
+      const res = insertStmt.run(
+        item.source_feed,
+        item.title,
+        item.link,
+        item.summary || '',
+        item.content || '',
+        item.image_url || '',
+        item.pub_date || new Date().toISOString()
+      );
+      if (res.changes > 0) insertedCount++;
+    }
+  }
+
+  return {
+    source: sourceName,
+    totalFound: crawledItems.length,
+    newItemsAdded: insertedCount,
+    items: crawledItems
+  };
+}
+
+/**
+ * Import a crawled article directly into the main articles table
+ * @param {number} crawledId - ID of crawled_articles
+ * @param {number} categoryId - Category ID to assign
+ * @param {boolean} deepScrape - Whether to fetch full article text from target website
+ */
+async function importCrawledArticle(crawledId, categoryId = 1, deepScrape = true) {
+  const crawled = db.prepare('SELECT * FROM crawled_articles WHERE id = ?').get(crawledId);
+  if (!crawled) throw new Error('Artikel crawled tidak ditemukan.');
+
+  const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId) || {
+    id: 1,
+    name: 'Investigasi & Kriminal'
+  };
+
+  let title = crawled.title;
+  let content = crawled.content || `<p>${crawled.summary}</p>`;
+  let imageUrl = crawled.image_url;
+  let author = 'Redaksi Sindikasi';
+  let sourceName = crawled.source_feed;
+  let sourceUrl = crawled.link;
+
+  if (deepScrape && crawled.link) {
+    try {
+      const fullArticle = await scrapeNewsFromUrl(crawled.link);
+      if (fullArticle.title) title = fullArticle.title;
+      if (fullArticle.content) content = fullArticle.content;
+      if (fullArticle.image_url) imageUrl = fullArticle.image_url;
+      if (fullArticle.author) author = fullArticle.author;
+      if (fullArticle.source_name) sourceName = fullArticle.source_name;
+    } catch (e) {
+      console.warn(`Deep scrape failed for ${crawled.link}, using RSS summary content instead.`);
+    }
+  }
+
+  const slug = title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 90) + '-' + Math.floor(1000 + Math.random() * 9000);
+
+  const insertArticle = db.prepare(`
+    INSERT INTO articles (
+      title, slug, summary, content, category_id, category_name, tags,
+      image_url, author, source_url, source_name, is_featured, is_breaking, views, reactions, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '{"sedih":0,"terkejut":0,"berduka":0,"kritis":0,"kagum":0}', 'published')
+  `);
+
+  const result = insertArticle.run(
+    title,
+    slug,
+    crawled.summary || title,
+    content,
+    category.id,
+    category.name,
+    'Siber, Sindikasi, Terkini',
+    imageUrl,
+    author,
+    sourceUrl,
+    sourceName
+  );
+
+  // Mark crawled article as imported
+  db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE id = ?").run(crawledId);
+
+  return {
+    success: true,
+    articleId: result.lastInsertRowid,
+    slug
+  };
+}
+
+module.exports = {
+  crawlFeed,
+  importCrawledArticle
+};

@@ -1,0 +1,29 @@
+{
+  "name": "calon-jenazah-portal",
+  "version": "1.0.0",
+  "description": "Portal Berita Calon Jenazah & Admin Dashboard",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "npm --prefix client run build",
+    "dev": "node server/index.js",
+    "server": "node server/index.js",
+    "client": "npm --prefix client run dev"
+  },
+  "keywords": ["news", "portal", "crawler", "scraper", "tracker"],
+  "author": "Calon Jenazah Media",
+  "license": "ISC",
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "axios": "^1.7.9",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "geoip-lite": "^1.4.10",
+    "jsdom": "^26.0.0",
+    "rss-parser": "^3.13.0",
+    "socket.io": "^4.8.1",
+    "ua-parser-js": "^2.0.2"
+  }
+}
