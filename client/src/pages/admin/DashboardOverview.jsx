@@ -33,16 +33,17 @@ export default function DashboardOverview({ liveVisitors = [], setActiveTab, nav
       .catch(() => setLoading(false));
   }, []);
 
-  // Device Breakdown Chart Data
-  const deviceLabels = summary?.deviceBreakdown?.map(d => d.device_type) || ['Desktop', 'Mobile', 'Tablet'];
-  const deviceData = summary?.deviceBreakdown?.map(d => d.count) || [65, 30, 5];
+  // Device Breakdown Chart Data (Real data only)
+  const hasDeviceData = summary?.deviceBreakdown && summary.deviceBreakdown.length > 0;
+  const deviceLabels = hasDeviceData ? summary.deviceBreakdown.map(d => d.device_type) : [];
+  const deviceData = hasDeviceData ? summary.deviceBreakdown.map(d => d.count) : [];
 
   const doughnutData = {
     labels: deviceLabels,
     datasets: [
       {
         data: deviceData,
-        backgroundColor: ['#e63946', '#3b82f6', '#10b981', '#f59e0b'],
+        backgroundColor: ['#e63946', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
         borderColor: '#12161f',
         borderWidth: 2
       }
@@ -178,7 +179,13 @@ export default function DashboardOverview({ liveVisitors = [], setActiveTab, nav
             Distribusi Perangkat Pengakses
           </h3>
           <div style={{ height: '240px', position: 'relative' }}>
-            <Doughnut data={doughnutData} options={chartOptions} />
+            {hasDeviceData ? (
+              <Doughnut data={doughnutData} options={chartOptions} />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                Belum ada data kunjungan yang tercatat.
+              </div>
+            )}
           </div>
         </div>
 
@@ -197,28 +204,36 @@ export default function DashboardOverview({ liveVisitors = [], setActiveTab, nav
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>
               SISTEM OPERASI (OS):
             </span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {summary?.osBreakdown?.map((os, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-primary)' }}>{os.os}</span>
-                  <span style={{ fontWeight: '700', color: 'var(--accent-crimson)' }}>{os.count} kunjungan</span>
-                </div>
-              ))}
-            </div>
+            {summary?.osBreakdown && summary.osBreakdown.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {summary.osBreakdown.map((os, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>{os.os}</span>
+                    <span style={{ fontWeight: '700', color: 'var(--accent-crimson)' }}>{os.count} kunjungan</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Belum ada data OS</span>
+            )}
           </div>
 
           <div>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>
               BROWSER:
             </span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {summary?.browserBreakdown?.map((b, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                  <span style={{ color: 'var(--text-primary)' }}>{b.browser}</span>
-                  <span style={{ fontWeight: '700', color: 'var(--accent-gold)' }}>{b.count} kunjungan</span>
-                </div>
-              ))}
-            </div>
+            {summary?.browserBreakdown && summary.browserBreakdown.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {summary.browserBreakdown.map((b, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>{b.browser}</span>
+                    <span style={{ fontWeight: '700', color: 'var(--accent-gold)' }}>{b.count} kunjungan</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>Belum ada data browser</span>
+            )}
           </div>
         </div>
       </div>

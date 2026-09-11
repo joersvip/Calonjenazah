@@ -289,31 +289,4 @@ if (artCount.count === 0) {
   }
 }
 
-// Seed sample visitor history data so the dashboard map and charts are immediately rich and visual!
-const visCount = db.prepare('SELECT COUNT(*) as count FROM visitor_logs').get();
-if (visCount.count === 0) {
-  const insertLog = db.prepare(`
-    INSERT INTO visitor_logs (
-      ip, country, country_code, city, region, latitude, longitude, isp,
-      user_agent, browser, browser_version, os, os_version, device_type,
-      screen_resolution, page_url, page_title, referrer, session_id, duration_seconds, visited_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
-  `);
-
-  const mockVisitors = [
-    ['180.252.164.12', 'Indonesia', 'ID', 'Jakarta', 'DKI Jakarta', -6.2088, 106.8456, 'Telkom Indonesia', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0', 'Chrome', '122.0', 'Windows', '10', 'Desktop', '1920x1080', '/berita/menelisik-tabir-gelap-mafia-tanah-menelan-korban', 'Menelisik Tabir Gelap Kasus Mafia Tanah', 'https://google.com', 'sess_01', 145, '-2 hours'],
-    ['114.124.201.88', 'Indonesia', 'ID', 'Surabaya', 'Jawa Timur', -7.2575, 112.7521, 'Indosat Ooredoo', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) Mobile/15E148 Safari/604.1', 'Safari', '17.3', 'iOS', '17.3', 'Mobile', '390x844', '/berita/ilmuwan-teliti-aktivitas-otak-30-detik-setelah-jantung-berhenti', 'Ilmuwan Teliti Aktivitas Otak 30 Detik Setelah Jantung Berhenti', 'https://t.co/', 'sess_02', 88, '-3 hours'],
-    ['182.1.84.45', 'Indonesia', 'ID', 'Bandung', 'Jawa Barat', -6.9175, 107.6191, 'Biznet Networks', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121.0', 'Chrome', '121.0', 'macOS', '10.15', 'Desktop', '2560x1440', '/', 'CALON JENAZAH - Portal Berita Kritis', 'Direct', 'sess_03', 210, '-5 hours'],
-    ['118.99.112.30', 'Indonesia', 'ID', 'Medan', 'Sumatera Utara', 3.5952, 98.6722, 'XL Axiata', 'Mozilla/5.0 (Linux; Android 14; SM-S928B) Chrome/122.0 Mobile', 'Chrome Mobile', '122.0', 'Android', '14', 'Mobile', '412x915', '/berita/sorotan-polemik-anggaran-mewah-pejabat-di-tengah-sekolah-lapuk', 'Sorotan Polemik Anggaran Mewah Pejabat', 'https://facebook.com', 'sess_04', 62, '-8 hours'],
-    ['103.247.16.5', 'Indonesia', 'ID', 'Yogyakarta', 'DI Yogyakarta', -7.7956, 110.3695, 'MyRepublic', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0', 'Firefox', '123.0', 'Windows', '11', 'Desktop', '1920x1080', '/berita/ritual-rambu-solo-di-tana-toraja-filosofi-memuliakan-kematian', 'Ritual Rambu Solo di Tana Toraja', 'https://google.com', 'sess_05', 312, '-12 hours'],
-    ['140.213.33.19', 'Indonesia', 'ID', 'Makassar', 'Sulawesi Selatan', -5.1477, 119.4327, 'Telkomsel', 'Mozilla/5.0 (Linux; Android 13; Redmi Note 12) Chrome/121.0', 'Chrome Mobile', '121.0', 'Android', '13', 'Mobile', '393x873', '/kategori/investigasi-kriminal', 'Kategori Investigasi & Kriminal', 'https://instagram.com', 'sess_06', 45, '-1 day'],
-    ['13.212.180.50', 'Singapore', 'SG', 'Singapore', 'Central Singapore', 1.3521, 103.8198, 'Amazon Web Services', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) Safari/605.1.15', 'Safari', '17.2', 'macOS', '14.2', 'Desktop', '1728x1117', '/', 'CALON JENAZAH - Portal Berita Kritis', 'https://news.ycombinator.com', 'sess_07', 190, '-1 day'],
-    ['104.28.212.8', 'Malaysia', 'MY', 'Kuala Lumpur', 'Wilayah Persekutuan', 3.1390, 101.6869, 'Cloudflare Inc', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edge/122.0', 'Edge', '122.0', 'Windows', '11', 'Desktop', '1920x1080', '/berita/menelisik-tabir-gelap-mafia-tanah-menelan-korban', 'Menelisik Tabir Gelap Kasus Mafia Tanah', 'https://google.com.my', 'sess_08', 95, '-2 days']
-  ];
-
-  for (const log of mockVisitors) {
-    insertLog.run(...log);
-  }
-}
-
 module.exports = db;

@@ -6,18 +6,6 @@ const db = require('../db');
 // socketId -> Visitor Object
 const activeVisitors = new Map();
 
-// Realistic Indonesian city coordinates fallback for local dev / loopback IP
-const LOCAL_FALLBACK_CITIES = [
-  { city: 'Jakarta Pusat', region: 'DKI Jakarta', country: 'Indonesia', country_code: 'ID', lat: -6.1754, lon: 106.8272, isp: 'Telkom Indonesia' },
-  { city: 'Surabaya', region: 'Jawa Timur', country: 'Indonesia', country_code: 'ID', lat: -7.2575, lon: 112.7521, isp: 'Indosat Ooredoo' },
-  { city: 'Bandung', region: 'Jawa Barat', country: 'Indonesia', country_code: 'ID', lat: -6.9175, lon: 107.6191, isp: 'Biznet Networks' },
-  { city: 'Medan', region: 'Sumatera Utara', country: 'Indonesia', country_code: 'ID', lat: 3.5952, lon: 98.6722, isp: 'XL Axiata' },
-  { city: 'Yogyakarta', region: 'DI Yogyakarta', country: 'Indonesia', country_code: 'ID', lat: -7.7956, lon: 110.3695, isp: 'MyRepublic' },
-  { city: 'Makassar', region: 'Sulawesi Selatan', country: 'Indonesia', country_code: 'ID', lat: -5.1477, lon: 119.4327, isp: 'Telkomsel' }
-];
-
-let fallbackIndex = 0;
-
 /**
  * Extracts and cleans client IP address from express request
  */
@@ -25,64 +13,66 @@ function extractClientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
     const ips = forwarded.split(',').map(ip => ip.trim());
-    return ips[0];
+    const first = ips[0];
+    if (first === '::1') return '127.0.0.1';
+    if (first.startsWith('::ffff:')) return first.replace('::ffff:', '');
+    return first;
   }
-  return req.headers['x-real-ip'] ||
-         req.headers['cf-connecting-ip'] ||
-         req.socket?.remoteAddress ||
-         '127.0.0.1';
+  const raw = req.headers['x-real-ip'] ||
+              req.headers['cf-connecting-ip'] ||
+              req.socket?.remoteAddress ||
+              '127.0.0.1';
+  if (raw === '::1') return '127.0.0.1';
+  if (raw.startsWith('::ffff:')) return raw.replace('::ffff:', '');
+  return raw;
 }
 
 /**
- * Resolve geolocation details from IP address
+ * Resolve geolocation details from IP address (Production)
  */
 function resolveGeo(ip) {
-  const cleanIp = ip.replace(/^.*:/, ''); // strip IPv6 mapped IPv4 like ::ffff:
-  const isLocal = !cleanIp || cleanIp === '127.0.0.1' || cleanIp === 'localhost' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.');
+  let cleanIp = (ip || '').trim();
+  if (cleanIp === '::1') cleanIp = '127.0.0.1';
+  if (cleanIp.startsWith('::ffff:')) cleanIp = cleanIp.replace('::ffff:', '');
+
+  const isLocal = !cleanIp || cleanIp === '127.0.0.1' || cleanIp === 'localhost' || cleanIp.startsWith('192.168.') || cleanIp.startsWith('10.') || cleanIp.startsWith('172.16.');
 
   if (isLocal) {
-    // For localhost testing, return realistic active location with cycle
-    const sample = LOCAL_FALLBACK_CITIES[fallbackIndex % LOCAL_FALLBACK_CITIES.length];
     return {
-      ip: cleanIp === '127.0.0.1' ? '180.252.164.12 (Local Dev)' : cleanIp,
-      city: sample.city,
-      region: sample.region,
-      country: sample.country,
-      country_code: sample.country_code,
-      latitude: sample.lat,
-      longitude: sample.lon,
-      isp: sample.isp,
-      is_simulated: true
+      ip: cleanIp || '127.0.0.1',
+      city: 'Jaringan Lokal',
+      region: 'Local Network',
+      country: 'Indonesia',
+      country_code: 'ID',
+      latitude: -6.2088,
+      longitude: 106.8456,
+      isp: 'Localhost / Internal'
     };
   }
 
   const geo = geoip.lookup(cleanIp);
-  if (geo) {
+  if (geo && geo.ll) {
     return {
       ip: cleanIp,
-      city: geo.city || 'Kota Tidak Diketahui',
+      city: geo.city || 'Wilayah Publik',
       region: geo.region || '',
-      country: geo.country === 'ID' ? 'Indonesia' : geo.country,
+      country: geo.country === 'ID' ? 'Indonesia' : (geo.country || 'Global'),
       country_code: geo.country || 'ID',
-      latitude: geo.ll ? geo.ll[0] : -6.2088,
-      longitude: geo.ll ? geo.ll[1] : 106.8456,
-      isp: 'ISP Publik',
-      is_simulated: false
+      latitude: geo.ll[0],
+      longitude: geo.ll[1],
+      isp: 'Internet Provider'
     };
   }
 
-  // Generic fallback if GeoIP lookup yields null
-  const sample = LOCAL_FALLBACK_CITIES[0];
   return {
     ip: cleanIp,
-    city: sample.city,
-    region: sample.region,
-    country: sample.country,
-    country_code: sample.country_code,
-    latitude: sample.lat,
-    longitude: sample.lon,
-    isp: 'Internet Provider',
-    is_simulated: true
+    city: 'Lokasi Tidak Terdeteksi',
+    region: '-',
+    country: 'Global',
+    country_code: 'GL',
+    latitude: -6.2088,
+    longitude: 106.8456,
+    isp: 'Internet Provider'
   };
 }
 
