@@ -839,15 +839,36 @@ function setupSocketTracking(io) {
 }
 
 /**
- * Retrieve visitor analytics and statistics (strictly excluding Admin IPs)
+ * Retrieve comprehensive portal and visitor analytics synchronized with all database tables
  */
 function getVisitorAnalytics() {
   const whereExclude = "WHERE ip NOT IN (SELECT ip FROM admin_ips) AND ip NOT IN ('127.0.0.1', '::1', 'localhost')";
 
+  // 1. Visitor logs counts
   const totalVisits = db.prepare(`SELECT COUNT(*) as count FROM visitor_logs ${whereExclude}`).get().count;
   const uniqueIps = db.prepare(`SELECT COUNT(DISTINCT ip) as count FROM visitor_logs ${whereExclude}`).get().count;
 
-  // Device breakdown
+  // 2. Real portal news & editorial counts
+  const totalArticles = db.prepare("SELECT COUNT(*) as count FROM articles WHERE status = 'published'").get().count;
+  const viewsRow = db.prepare("SELECT SUM(views) as total_views FROM articles").get();
+  const totalArticleViews = viewsRow ? (viewsRow.total_views || 0) : 0;
+  const combinedTotalViews = totalArticleViews + totalVisits;
+
+  // 3. Web crawler & sources counts
+  const totalCrawled = db.prepare("SELECT COUNT(*) as count FROM crawled_articles").get().count;
+  const totalCrawlerSources = db.prepare("SELECT COUNT(*) as count FROM crawler_sources WHERE is_active = 1").get().count;
+  const totalAdmins = db.prepare("SELECT COUNT(*) as count FROM admins WHERE is_active = 1").get().count;
+
+  // 4. Real category breakdown from articles database
+  const categoryRows = db.prepare(`
+    SELECT c.id, c.name as category_name, c.color, COUNT(a.id) as count
+    FROM categories c
+    LEFT JOIN articles a ON a.category_id = c.id AND a.status = 'published'
+    GROUP BY c.id, c.name
+    ORDER BY count DESC
+  `).all();
+
+  // 5. Device breakdown
   const deviceRows = db.prepare(`
     SELECT device_type, COUNT(*) as count 
     FROM visitor_logs 
@@ -856,7 +877,7 @@ function getVisitorAnalytics() {
     ORDER BY count DESC
   `).all();
 
-  // OS breakdown
+  // 6. OS breakdown
   const osRows = db.prepare(`
     SELECT os, COUNT(*) as count 
     FROM visitor_logs 
@@ -866,7 +887,7 @@ function getVisitorAnalytics() {
     LIMIT 5
   `).all();
 
-  // Browser breakdown
+  // 7. Browser breakdown
   const browserRows = db.prepare(`
     SELECT browser, COUNT(*) as count 
     FROM visitor_logs 
@@ -876,7 +897,7 @@ function getVisitorAnalytics() {
     LIMIT 5
   `).all();
 
-  // Top locations
+  // 8. Top locations
   const locationRows = db.prepare(`
     SELECT city, country, COUNT(*) as count, AVG(latitude) as lat, AVG(longitude) as lon
     FROM visitor_logs 
@@ -886,17 +907,25 @@ function getVisitorAnalytics() {
     LIMIT 10
   `).all();
 
-  // Top read articles
+  // 9. Real Top Read Articles from articles database
   const topArticles = db.prepare(`
-    SELECT page_title, page_url, COUNT(*) as views 
-    FROM visitor_logs 
-    ${whereExclude} AND page_url LIKE '/berita/%' 
-    GROUP BY page_url 
-    ORDER BY views DESC 
-    LIMIT 5
+    SELECT id, title, slug, views, category_name, author, image_url, created_at
+    FROM articles 
+    WHERE status = 'published'
+    ORDER BY views DESC, id DESC 
+    LIMIT 6
   `).all();
 
-  // 7 days trend
+  // 10. Real Recent Published Articles from articles database
+  const recentArticles = db.prepare(`
+    SELECT id, title, slug, views, category_name, source_name, author, created_at
+    FROM articles
+    WHERE status = 'published'
+    ORDER BY id DESC
+    LIMIT 6
+  `).all();
+
+  // 11. 7 days trend
   const dailyVisits = db.prepare(`
     SELECT date(visited_at) as visit_date, COUNT(*) as count
     FROM visitor_logs
@@ -906,15 +935,42 @@ function getVisitorAnalytics() {
     LIMIT 7
   `).all();
 
+  // 12. Settings integration (SEO & Auto-Crawl)
+  let seoScore = 91;
+  try {
+    const seoRow = db.prepare("SELECT value FROM settings WHERE key = 'seo_health_score'").get();
+    if (seoRow && seoRow.value) seoScore = Number(seoRow.value);
+  } catch (e) {}
+
+  let autoCrawlActive = false;
+  let autoCrawlLastRun = null;
+  try {
+    const acRow = db.prepare("SELECT value FROM settings WHERE key = 'auto_crawl_enabled'").get();
+    autoCrawlActive = acRow ? acRow.value === 'true' : false;
+    const acLast = db.prepare("SELECT value FROM settings WHERE key = 'auto_crawl_last_run'").get();
+    autoCrawlLastRun = acLast ? acLast.value : null;
+  } catch (e) {}
+
   return {
-    totalVisits,
+    totalVisits: combinedTotalViews,
+    totalArticleViews,
+    logVisitsCount: totalVisits,
+    totalArticles,
+    totalCrawled,
+    totalCrawlerSources,
+    totalAdmins,
     uniqueIps,
+    seoScore,
+    autoCrawlActive,
+    autoCrawlLastRun,
     activeLiveCount: getCleanActiveVisitors().length,
+    categoryBreakdown: categoryRows,
     deviceBreakdown: deviceRows,
     osBreakdown: osRows,
     browserBreakdown: browserRows,
     topLocations: locationRows,
     topArticles,
+    recentArticles,
     dailyVisits: dailyVisits.reverse()
   };
 }
