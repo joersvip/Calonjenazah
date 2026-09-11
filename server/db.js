@@ -92,6 +92,8 @@ db.exec(`
     content TEXT,
     image_url TEXT,
     pub_date TEXT,
+    category_id INTEGER,
+    category_name TEXT,
     status TEXT DEFAULT 'pending', -- pending, imported, dismissed
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -111,6 +113,14 @@ db.exec(`
     value TEXT
   );
 `);
+
+// Safe column migrations for existing databases
+try {
+  db.exec('ALTER TABLE crawled_articles ADD COLUMN category_id INTEGER');
+} catch (e) {}
+try {
+  db.exec('ALTER TABLE crawled_articles ADD COLUMN category_name TEXT');
+} catch (e) {}
 
 // Seed default categories if empty
 const catCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();

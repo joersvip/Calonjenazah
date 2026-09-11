@@ -486,7 +486,7 @@ router.get('/crawler/articles', (req, res) => {
 // Import crawled article(s) into news database
 router.post('/crawler/import', async (req, res) => {
   try {
-    const { ids, category_id = 1, deepScrape = true } = req.body; // array of IDs or single ID
+    const { ids, category_id = 'auto', deepScrape = true } = req.body; // array of IDs or single ID
     const targetIds = Array.isArray(ids) ? ids : [ids];
 
     const results = [];
@@ -500,6 +500,23 @@ router.post('/crawler/import', async (req, res) => {
     }
 
     res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update category of a specific crawled article
+router.put('/crawler/articles/:id/category', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category_id } = req.body;
+    const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(category_id);
+    if (!cat) return res.status(400).json({ success: false, error: 'Kategori tidak valid' });
+
+    db.prepare('UPDATE crawled_articles SET category_id = ?, category_name = ? WHERE id = ?')
+      .run(cat.id, cat.name, id);
+
+    res.json({ success: true, message: 'Kategori berhasil diperbarui', category_id: cat.id, category_name: cat.name });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

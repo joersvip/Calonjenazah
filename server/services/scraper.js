@@ -131,6 +131,22 @@ async function scrapeNewsFromUrl(url) {
     summary = $c('p').first().text().trim().substring(0, 200) + '...';
   }
 
+  // Extract category metadata from page
+  const rawSection = $('meta[property="article:section"]').attr('content') ||
+                     $('meta[name="keywords"]').attr('content') ||
+                     $('meta[property="og:article:section"]').attr('content') ||
+                     $('.breadcrumb, [itemprop="itemListElement"]').text().trim() || '';
+
+  const { classifyNewsCategory } = require('./classifier');
+  const detectedCategory = classifyNewsCategory({
+    title,
+    summary,
+    content,
+    url,
+    sourceFeed: domain,
+    rawCategories: rawSection
+  });
+
   // Generate URL slug
   const slug = title
     .toLowerCase()
@@ -147,7 +163,9 @@ async function scrapeNewsFromUrl(url) {
     author,
     source_name: domain,
     source_url: url,
-    pub_date: pubDate
+    pub_date: pubDate,
+    category_id: detectedCategory.category_id,
+    category_name: detectedCategory.category_name
   };
 }
 

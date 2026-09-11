@@ -3,19 +3,42 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const db = require('../db');
 const { scrapeNewsFromUrl } = require('./scraper');
+const { classifyNewsCategory } = require('./classifier');
 
 const rssParser = new Parser({
   customFields: {
     item: [
       ['media:content', 'mediaContent'],
       ['enclosure', 'enclosure'],
-      ['content:encoded', 'contentEncoded']
+      ['content:encoded', 'contentEncoded'],
+      ['category', 'category'],
+      ['dc:subject', 'dcSubject']
     ]
   }
 });
 
+// One-time backfill for existing crawled articles without category
+try {
+  const uncatItems = db.prepare('SELECT id, title, summary, content, link, source_feed FROM crawled_articles WHERE category_id IS NULL OR category_name IS NULL').all();
+  if (uncatItems.length > 0) {
+    const updateStmt = db.prepare('UPDATE crawled_articles SET category_id = ?, category_name = ? WHERE id = ?');
+    for (const item of uncatItems) {
+      const detected = classifyNewsCategory({
+        title: item.title,
+        summary: item.summary,
+        content: item.content,
+        url: item.link,
+        sourceFeed: item.source_feed
+      });
+      updateStmt.run(detected.category_id, detected.category_name, item.id);
+    }
+  }
+} catch (e) {
+  console.warn('Auto backfill crawled categories error:', e.message);
+}
+
 /**
- * Fetch and crawl news items from an RSS feed or URL
+ * Fetch and crawl news items from an RSS feed or URL, automatically detecting category for each item
  * @param {string} sourceUrl - RSS feed URL or website
  * @param {string} sourceName - Source display name
  * @returns {Promise<Array>} Array of crawled articles
@@ -43,6 +66,26 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
       const summary = item.contentSnippet || item.summary || item.title;
       const cleanSummary = summary ? summary.replace(/<[^>]*>/g, '').trim().substring(0, 280) : '';
 
+      // Collect raw categories from RSS item
+      let rawCategories = [];
+      if (Array.isArray(item.categories)) {
+        rawCategories = item.categories;
+      } else if (item.category) {
+        rawCategories = [item.category];
+      } else if (item.dcSubject) {
+        rawCategories = [item.dcSubject];
+      }
+
+      // Automatically classify category from news source, tags, URL and content
+      const detected = classifyNewsCategory({
+        title: item.title ? item.title.trim() : '',
+        summary: cleanSummary,
+        content: item.contentEncoded || item.content || cleanSummary,
+        url: item.link ? item.link.trim() : '',
+        sourceFeed: sourceTitle,
+        rawCategories
+      });
+
       crawledItems.push({
         source_feed: sourceTitle,
         title: item.title ? item.title.trim() : 'Berita Tanpa Judul',
@@ -50,7 +93,9 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
         summary: cleanSummary,
         content: item.contentEncoded || item.content || cleanSummary,
         image_url: imageUrl || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
-        pub_date: item.pubDate || item.isoDate || new Date().toISOString()
+        pub_date: item.pubDate || item.isoDate || new Date().toISOString(),
+        category_id: detected.category_id,
+        category_name: detected.category_name
       });
     }
   } catch (rssError) {
@@ -78,6 +123,14 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
         if (img && img.startsWith('/')) img = origin + img;
 
         if (title && href && href.startsWith('http')) {
+          const detected = classifyNewsCategory({
+            title,
+            summary: snippet,
+            content: snippet,
+            url: href,
+            sourceFeed: sourceName || 'Web Scraper'
+          });
+
           crawledItems.push({
             source_feed: sourceName || 'Web Scraper',
             title,
@@ -85,7 +138,9 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
             summary: snippet.substring(0, 200),
             content: snippet,
             image_url: img || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
-            pub_date: new Date().toISOString()
+            pub_date: new Date().toISOString(),
+            category_id: detected.category_id,
+            category_name: detected.category_name
           });
         }
       });
@@ -94,11 +149,17 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     }
   }
 
-  // Save unique crawled articles to database
+  // Save unique crawled articles to database with detected category
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO crawled_articles (
-      source_feed, title, link, summary, content, image_url, pub_date, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+      source_feed, title, link, summary, content, image_url, pub_date, category_id, category_name, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+  `);
+
+  const updateCatStmt = db.prepare(`
+    UPDATE crawled_articles 
+    SET category_id = ?, category_name = ? 
+    WHERE link = ? AND (category_id IS NULL OR category_name IS NULL)
   `);
 
   let insertedCount = 0;
@@ -111,9 +172,16 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
         item.summary || '',
         item.content || '',
         item.image_url || '',
-        item.pub_date || new Date().toISOString()
+        item.pub_date || new Date().toISOString(),
+        item.category_id,
+        item.category_name
       );
-      if (res.changes > 0) insertedCount++;
+      if (res.changes > 0) {
+        insertedCount++;
+      } else {
+        // If already exists, update category if it was missing
+        updateCatStmt.run(item.category_id, item.category_name, item.link);
+      }
     }
   }
 
@@ -126,19 +194,24 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
 }
 
 /**
- * Import a crawled article directly into the main articles table
+ * Import a crawled article directly into the main articles table.
+ * If categoryId is 'auto', undefined, or <= 0, the auto-detected category from source will be used.
+ * 
  * @param {number} crawledId - ID of crawled_articles
- * @param {number} categoryId - Category ID to assign
+ * @param {number|string} categoryId - Category ID to assign, or 'auto'
  * @param {boolean} deepScrape - Whether to fetch full article text from target website
  */
-async function importCrawledArticle(crawledId, categoryId = 1, deepScrape = true) {
+async function importCrawledArticle(crawledId, categoryId = 'auto', deepScrape = true) {
   const crawled = db.prepare('SELECT * FROM crawled_articles WHERE id = ?').get(crawledId);
   if (!crawled) throw new Error('Artikel crawled tidak ditemukan.');
 
-  const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId) || {
-    id: 1,
-    name: 'Investigasi & Kriminal'
-  };
+  let targetCatId = categoryId;
+  let targetCatName = crawled.category_name || '';
+
+  // If auto or unspecified, use the source-detected category
+  if (targetCatId === 'auto' || !targetCatId || targetCatId === '' || Number(targetCatId) <= 0) {
+    targetCatId = crawled.category_id || 1;
+  }
 
   let title = crawled.title;
   let content = crawled.content || `<p>${crawled.summary}</p>`;
@@ -155,10 +228,24 @@ async function importCrawledArticle(crawledId, categoryId = 1, deepScrape = true
       if (fullArticle.image_url) imageUrl = fullArticle.image_url;
       if (fullArticle.author) author = fullArticle.author;
       if (fullArticle.source_name) sourceName = fullArticle.source_name;
+
+      // If auto-category was chosen, refine with full article content
+      if (categoryId === 'auto' || !categoryId || targetCatId === 'auto' || Number(categoryId) <= 0) {
+        if (fullArticle.category_id) {
+          targetCatId = fullArticle.category_id;
+          targetCatName = fullArticle.category_name;
+        }
+      }
     } catch (e) {
       console.warn(`Deep scrape failed for ${crawled.link}, using RSS summary content instead.`);
     }
   }
+
+  // Lookup official category row
+  const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(Number(targetCatId)) || {
+    id: 1,
+    name: targetCatName || 'Investigasi & Kriminal'
+  };
 
   const slug = title
     .toLowerCase()
@@ -193,7 +280,9 @@ async function importCrawledArticle(crawledId, categoryId = 1, deepScrape = true
   return {
     success: true,
     articleId: result.lastInsertRowid,
-    slug
+    slug,
+    category_id: category.id,
+    category_name: category.name
   };
 }
 

@@ -56,6 +56,9 @@ export default function ReuploadNews({ navigate }) {
           setAuthor(a.author || 'Redaksi Sumber');
           setSourceName(a.source_name || '');
           setTags('Sindikasi, Terkini, Nasional');
+          if (a.category_id) {
+            setCategoryId(String(a.category_id));
+          }
         } else {
           setErrorMsg(data.error || 'Gagal mengekstrak berita dari tautan tersebut.');
         }
@@ -333,8 +336,9 @@ export default function ReuploadNews({ navigate }) {
 
               <div className="responsive-grid-2" style={{ marginTop: '14px' }}>
                 <div>
-                  <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: '600' }}>
-                    Kategori Berita
+                  <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', fontWeight: '600' }}>
+                    <span>Kategori Berita</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-gold)' }}>✨ Otomatis dari Sumber</span>
                   </label>
                   <select
                     value={categoryId}

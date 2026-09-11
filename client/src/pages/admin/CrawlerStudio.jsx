@@ -15,7 +15,7 @@ export default function CrawlerStudio({ navigate }) {
 
   const [crawledArticles, setCrawledArticles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
-  const [targetCategory, setTargetCategory] = useState('1');
+  const [targetCategory, setTargetCategory] = useState('auto');
   const [importing, setImporting] = useState(false);
   const [importResultMsg, setImportResultMsg] = useState('');
   const [previewItem, setPreviewItem] = useState(null);
@@ -109,7 +109,7 @@ export default function CrawlerStudio({ navigate }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ids: selectedIds,
-        category_id: Number(targetCategory),
+        category_id: targetCategory,
         deepScrape: true
       })
     })
@@ -317,13 +317,16 @@ export default function CrawlerStudio({ navigate }) {
               onChange={(e) => setTargetCategory(e.target.value)}
               style={{
                 background: '#0a0d14',
-                border: '1px solid var(--border-subtle)',
+                border: targetCategory === 'auto' ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
                 borderRadius: '6px',
                 padding: '6px 12px',
                 fontSize: '0.82rem',
-                color: '#fff'
+                color: targetCategory === 'auto' ? 'var(--accent-gold)' : '#fff',
+                fontWeight: targetCategory === 'auto' ? '700' : 'normal',
+                outline: 'none'
               }}
             >
+              <option value="auto">🎯 Otomatis dari Sumber Berita (Rekomendasi)</option>
               <option value="1">Investigasi & Kriminal</option>
               <option value="2">Misteri & Sains Ajal</option>
               <option value="3">Hukum & Keadilan</option>
@@ -368,6 +371,7 @@ export default function CrawlerStudio({ navigate }) {
                 <th style={{ padding: '10px 14px', width: '40px' }}>Pilih</th>
                 <th style={{ padding: '10px 14px' }}>Judul Berita</th>
                 <th style={{ padding: '10px 14px' }}>Sumber Feed</th>
+                <th style={{ padding: '10px 14px' }}>Kategori Otomatis</th>
                 <th style={{ padding: '10px 14px' }}>Waktu Terbit</th>
                 <th style={{ padding: '10px 14px' }}>Status</th>
                 <th style={{ padding: '10px 14px', textAlign: 'right' }}>Aksi</th>
@@ -376,7 +380,7 @@ export default function CrawlerStudio({ navigate }) {
             <tbody>
               {crawledArticles.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     Belum ada artikel hasil crawl. Pilih salah satu sumber di atas untuk memulai crawling!
                   </td>
                 </tr>
@@ -394,14 +398,32 @@ export default function CrawlerStudio({ navigate }) {
                         )}
                       </td>
 
-                      <td style={{ padding: '10px 14px', color: '#fff', fontWeight: '600', maxWidth: '380px' }}>
+                      <td style={{ padding: '10px 14px', color: '#fff', fontWeight: '600', maxWidth: '360px' }}>
                         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                           {item.title}
                         </div>
                       </td>
 
-                      <td style={{ padding: '10px 14px', color: 'var(--accent-gold)' }}>
+                      <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
                         {item.source_feed}
+                      </td>
+
+                      <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 9px',
+                          borderRadius: '4px',
+                          fontSize: '0.73rem',
+                          fontWeight: '700',
+                          background: 'rgba(212, 175, 55, 0.12)',
+                          color: 'var(--accent-gold)',
+                          border: '1px solid rgba(212, 175, 55, 0.25)'
+                        }}>
+                          <Sparkles size={11} color="var(--accent-gold)" />
+                          {item.category_name || 'Investigasi & Kriminal'}
+                        </span>
                       </td>
 
                       <td style={{ padding: '10px 14px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -475,7 +497,24 @@ export default function CrawlerStudio({ navigate }) {
             maxHeight: '85vh',
             overflowY: 'auto'
           }} onClick={(e) => e.stopPropagation()}>
-            <span className="badge-source" style={{ marginBottom: '10px' }}>{previewItem.source_feed}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <span className="badge-source">{previewItem.source_feed}</span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '0.74rem',
+                fontWeight: '700',
+                background: 'rgba(212, 175, 55, 0.15)',
+                color: 'var(--accent-gold)',
+                border: '1px solid rgba(212, 175, 55, 0.3)'
+              }}>
+                <Sparkles size={11} />
+                Kategori Terdeteksi: {previewItem.category_name || 'Investigasi & Kriminal'}
+              </span>
+            </div>
             <h3 className="editorial-title" style={{ fontSize: '1.3rem', color: '#fff', marginBottom: '14px' }}>{previewItem.title}</h3>
             {previewItem.image_url && (
               <img src={previewItem.image_url} alt="" style={{ width: '100%', height: '220px', objectFit: 'cover', borderRadius: '6px', marginBottom: '16px' }} />
