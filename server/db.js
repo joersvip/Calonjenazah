@@ -178,7 +178,8 @@ const migrations = [
   'ALTER TABLE visitor_logs ADD COLUMN lac TEXT',
   'ALTER TABLE visitor_logs ADD COLUMN tac TEXT',
   'ALTER TABLE visitor_logs ADD COLUMN mcc_mnc TEXT',
-  'ALTER TABLE visitor_logs ADD COLUMN cell_id TEXT'
+  'ALTER TABLE visitor_logs ADD COLUMN cell_id TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN imei TEXT'
 ];
 
 for (const mig of migrations) {

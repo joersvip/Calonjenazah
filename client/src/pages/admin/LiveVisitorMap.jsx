@@ -230,6 +230,12 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                 <strong style="color: #e63946;">📱 SELULER SMARTPHONE</strong>
                 <span style="font-size: 0.68rem; color: #64748b; font-weight: 700;">${visitor.mcc_mnc || '4G/5G'}</span>
               </div>
+              ${visitor.imei ? `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 3px; background: rgba(212,175,55,0.12); padding: 2px 5px; border-radius: 3px; border: 1px solid rgba(212,175,55,0.25);">
+                  <span style="color: #92400e;"><strong>IMEI:</strong></span>
+                  <span style="color: #b45309; font-family: monospace; font-weight: 800; letter-spacing: 0.5px;">${visitor.imei}</span>
+                </div>
+              ` : ''}
               <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                 <span><strong>TAC (4G/5G):</strong></span>
                 <span style="color: #b91c1c; font-family: monospace; font-weight: 800;">${visitor.tac || '40128 (0x9CB8)'}</span>
@@ -582,7 +588,39 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                     <span style={{ color: '#94a3b8' }}>{v.isp || 'ISP'}</span>
                   </div>
 
-                  {(v.device_type === 'Mobile' || v.tac) && (
+                  {/* Tampilkan IMEI dari perangkat jika tersedia */}
+                  {v.imei && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.72rem',
+                      background: 'rgba(212, 175, 55, 0.09)',
+                      border: '1px solid rgba(212, 175, 55, 0.3)',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      marginBottom: '6px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ color: 'var(--accent-gold)', fontWeight: '700' }}>🔢 IMEI:</span>
+                        <span style={{ color: '#fff', fontFamily: 'monospace', fontWeight: '800', letterSpacing: '0.6px' }}>
+                          {v.imei}
+                        </span>
+                      </div>
+                      <span style={{
+                        fontSize: '0.62rem',
+                        color: 'var(--accent-gold)',
+                        background: 'rgba(212, 175, 55, 0.16)',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        fontWeight: '700'
+                      }}>
+                        Tersedia
+                      </span>
+                    </div>
+                  )}
+
+                  {(v.device_type === 'Mobile' || v.tac || v.lac) && (
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -889,6 +927,17 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                       {selectedVisitor.language || 'id-ID'}
                     </span>
                   </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>IMEI Perangkat:</span>
+                    <span style={{
+                      color: selectedVisitor.imei ? 'var(--accent-gold)' : 'var(--text-muted)',
+                      fontWeight: '700',
+                      fontFamily: 'monospace'
+                    }}>
+                      {selectedVisitor.imei || 'Tidak Tersedia (Non-Seluler)'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -946,6 +995,20 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                       <span style={{ color: '#fff', fontWeight: '600' }}>
                         {selectedVisitor.mcc_mnc ? `${selectedVisitor.mcc_mnc} • ` : ''}{selectedVisitor.cellular_operator || selectedVisitor.isp || 'Telkomsel Selular'}
                       </span>
+                    </div>
+
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>IMEI Perangkat (15-Digit Identity):</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                        <span style={{ color: 'var(--accent-gold)', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.98rem', letterSpacing: '0.8px' }}>
+                          {selectedVisitor.imei || 'Tidak Tersedia'}
+                        </span>
+                        {selectedVisitor.imei && (
+                          <span style={{ fontSize: '0.68rem', background: 'rgba(212,175,55,0.15)', color: 'var(--accent-gold)', border: '1px solid rgba(212,175,55,0.3)', padding: '1px 6px', borderRadius: '4px', fontWeight: '700' }}>
+                            15-Digit GSM/UMTS/LTE
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div style={{ gridColumn: 'span 2' }}>

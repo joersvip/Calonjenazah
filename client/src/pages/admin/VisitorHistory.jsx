@@ -635,11 +635,19 @@ export default function VisitorHistory() {
                       {selectedLog.cpu_cores ? `${selectedLog.cpu_cores} Cores` : '4 Cores'} • {selectedLog.ram_gb ? `${selectedLog.ram_gb} GB` : '8 GB'} • {selectedLog.connection_type || 'WiFi'}
                     </div>
                   </div>
+                  {selectedLog.imei && (
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>IMEI Perangkat:</span>
+                      <div style={{ color: 'var(--accent-gold)', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.9rem', letterSpacing: '0.6px' }}>
+                        {selectedLog.imei}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Telemetri Seluler (Smartphone LAC & TAC) */}
-              {(selectedLog.device_type === 'Mobile' || selectedLog.tac || selectedLog.lac) && (
+              {(selectedLog.device_type === 'Mobile' || selectedLog.tac || selectedLog.lac || selectedLog.imei) && (
                 <div style={{
                   background: 'rgba(230,57,70,0.04)',
                   border: '1px solid rgba(230,57,70,0.3)',
@@ -679,6 +687,15 @@ export default function VisitorHistory() {
                         {selectedLog.lac || '10245 (0x2805)'}
                       </div>
                     </div>
+
+                    {selectedLog.imei && (
+                      <div style={{ gridColumn: 'span 2' }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>IMEI Perangkat (15-Digit):</span>
+                        <div style={{ color: 'var(--accent-gold)', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.95rem', letterSpacing: '0.6px' }}>
+                          {selectedLog.imei}
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Cell Tower ID:</span>

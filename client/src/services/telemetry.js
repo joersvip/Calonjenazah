@@ -64,6 +64,18 @@ export function getClientDeviceSpecs() {
     deviceModel = 'Linux Desktop';
   }
 
+  // Detect custom or bridge-provided device IMEI if running inside hybrid app/WebView
+  let deviceImei = null;
+  try {
+    if (typeof window !== 'undefined') {
+      deviceImei = window.__DEVICE_IMEI__ ||
+                   window.AndroidBridge?.getImei?.() ||
+                   window.webkit?.messageHandlers?.getImei?.() ||
+                   localStorage.getItem('calonjenazah_device_imei') ||
+                   null;
+    }
+  } catch (e) {}
+
   return {
     screenResolution: `${width}x${height}`,
     viewport: `${viewportW}x${viewportH}`,
@@ -77,7 +89,8 @@ export function getClientDeviceSpecs() {
     timezone: tz,
     deviceType,
     deviceBrand,
-    deviceModel
+    deviceModel,
+    imei: deviceImei
   };
 }
 

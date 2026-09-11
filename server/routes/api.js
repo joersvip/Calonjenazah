@@ -289,9 +289,9 @@ router.post('/analytics/track', (req, res) => {
 
     const { 
       pageUrl, pageTitle, articleId, referrer, sessionId, 
-      screenResolution, durationSeconds,
+      screenResolution, durationSeconds, deviceType,
       deviceBrand, deviceModel, cpuCores, ramGb, touchSupport,
-      pixelRatio, timezone, zipCode, connectionType, clientGeo, publicIp
+      pixelRatio, timezone, zipCode, connectionType, clientGeo, publicIp, imei
     } = req.body;
 
     // Strictly exclude Admin IP or session
@@ -318,6 +318,7 @@ router.post('/analytics/track', (req, res) => {
       sessionId,
       screenResolution,
       durationSeconds,
+      deviceType,
       deviceBrand,
       deviceModel,
       cpuCores,
@@ -328,6 +329,7 @@ router.post('/analytics/track', (req, res) => {
       zipCode,
       connectionType,
       clientGeo,
+      imei,
       isAdmin
     });
 
@@ -1098,8 +1100,8 @@ router.get('/analytics/history', (req, res) => {
     const params = [];
 
     if (search) {
-      whereClause += ' AND (ip LIKE ? OR city LIKE ? OR browser LIKE ? OR os LIKE ? OR page_title LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      whereClause += ' AND (ip LIKE ? OR city LIKE ? OR browser LIKE ? OR os LIKE ? OR page_title LIKE ? OR imei LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     if (country) {
@@ -1152,7 +1154,7 @@ router.get('/analytics/export-csv', (req, res) => {
              device_type, device_brand, device_model, os, os_version, browser, browser_version,
              screen_resolution, pixel_ratio, cpu_cores, ram_gb, touch_support,
              timezone, zip_code, connection_type,
-             lac, tac, mcc_mnc, cell_id,
+             lac, tac, mcc_mnc, cell_id, imei,
              page_title, page_url, referrer, duration_seconds, visited_at
       FROM visitor_logs 
       WHERE ip NOT IN (SELECT ip FROM admin_ips) AND ip NOT IN ('127.0.0.1', '::1', 'localhost')
@@ -1163,7 +1165,7 @@ router.get('/analytics/export-csv', (req, res) => {
       'ID', 'IP Address', 'Negara', 'Kota', 'Wilayah', 'Kode Pos', 'Latitude', 'Longitude',
       'ISP', 'Tipe Perangkat', 'Brand', 'Model', 'Sistem Operasi', 'OS Version', 'Browser', 'Browser Version',
       'Resolusi Layar', 'Pixel Ratio (DPR)', 'CPU Cores', 'RAM (GB)', 'Touch Support', 'Koneksi', 'Zona Waktu',
-      'LAC (Seluler)', 'TAC (Seluler)', 'MCC-MNC', 'Cell Tower ID',
+      'LAC (Seluler)', 'TAC (Seluler)', 'MCC-MNC', 'Cell Tower ID', 'IMEI Perangkat',
       'Halaman Berita', 'URL', 'Referrer', 'Durasi (Detik)', 'Waktu Kunjungan'
     ];
 
@@ -1198,6 +1200,7 @@ router.get('/analytics/export-csv', (req, res) => {
         `"${log.tac || ''}"`,
         `"${log.mcc_mnc || ''}"`,
         `"${log.cell_id || ''}"`,
+        `"${log.imei || ''}"`,
         `"${(log.page_title || '').replace(/"/g, '""')}"`,
         `"${log.page_url || ''}"`,
         `"${log.referrer || ''}"`,
