@@ -403,7 +403,7 @@ export default function CrawlerStudio({ navigate }) {
           </h2>
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Tarik puluhan artikel berita terbaru sekaligus dari feed sindikasi media nasional dan global. Anda dapat memilih berita yang relevan dan mengimpornya langsung ke portal CALON JENAZAH dengan 1 kali klik.
+          Tarik puluhan artikel berita terbaru sekaligus dari feed sindikasi media nasional terkemuka di Indonesia. Anda dapat memilih berita yang relevan dan mengimpornya langsung ke portal CALON JENAZAH dengan 1 kali klik.
         </p>
       </div>
 
@@ -427,7 +427,7 @@ export default function CrawlerStudio({ navigate }) {
           }}
         >
           <Cpu size={16} />
-          <span>Manual Crawl &amp; Koleksi 18 Sumber</span>
+          <span>Manual Crawl &amp; Koleksi Sumber Berita Indonesia ({sources.length})</span>
         </button>
 
         <button
@@ -909,17 +909,17 @@ export default function CrawlerStudio({ navigate }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
           <div>
             <h3 className="display-font" style={{ fontSize: '1.05rem', fontWeight: '800', color: '#fff', marginBottom: '4px' }}>
-              Pilih Sumber Berita untuk Dicrawl ({sources.length} Sumber Tersedia)
+              Pilih Sumber Berita Indonesia untuk Dicrawl ({sources.length} Sumber Tersedia)
             </h3>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Klik salah satu sumber media kredibel di bawah untuk langsung menarik berita terbaru ke antrian.
+              Fokus 100% pada media nasional Indonesia: Antara, CNN Indonesia, Tempo, Detikcom, Sindonews, Republika, Suara, Liputan6, Kontan, dsb.
             </p>
           </div>
 
           <div>
             <input
               type="text"
-              placeholder="Cari sumber (CNN, Tempo, Antara, Sindo...)"
+              placeholder="Cari sumber Indonesia (Antara, CNN, Tempo, Detik...)"
               value={sourceSearch}
               onChange={(e) => setSourceSearch(e.target.value)}
               style={{
@@ -938,11 +938,12 @@ export default function CrawlerStudio({ navigate }) {
         {/* Quick Filter Source Tags */}
         <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '8px' }}>
           {[
-            { id: 'all', label: `Semua Sumber (${sources.length})` },
+            { id: 'all', label: `Semua Sumber Indonesia (${sources.length})` },
             { id: 'hukum', label: '⚖️ Hukum & Kriminal' },
-            { id: 'politik', label: '🏛️ Politik & Nasional' },
-            { id: 'global', label: '🌍 Global & Internasional' },
-            { id: 'religi', label: '✨ Religi & Sains' }
+            { id: 'politik', label: '🏛️ Politik & Kebijakan' },
+            { id: 'daerah', label: '📰 Daerah & Peristiwa' },
+            { id: 'religi', label: '✨ Religi & Humaniora' },
+            { id: 'sains', label: '🌋 Bencana & Sains' }
           ].map(tag => (
             <button
               key={tag.id}
@@ -975,10 +976,11 @@ export default function CrawlerStudio({ navigate }) {
 
               if (sourceFilterTag === 'all') return true;
               const lower = (src.name + ' ' + src.url).toLowerCase();
-              if (sourceFilterTag === 'hukum') return lower.includes('hukum') || lower.includes('kriminal') || lower.includes('investigasi');
-              if (sourceFilterTag === 'politik') return lower.includes('politik') || lower.includes('kebijakan') || lower.includes('nasional') || lower.includes('kontan');
-              if (sourceFilterTag === 'global') return lower.includes('internasional') || lower.includes('dunia') || lower.includes('world') || lower.includes('bbc') || lower.includes('al jazeera') || lower.includes('the guardian') || lower.includes('cnbc');
-              if (sourceFilterTag === 'religi') return lower.includes('religi') || lower.includes('kalam') || lower.includes('humaniora') || lower.includes('warta bumi') || lower.includes('sains');
+              if (sourceFilterTag === 'hukum') return lower.includes('hukum') || lower.includes('kriminal') || lower.includes('investigasi') || lower.includes('kasus');
+              if (sourceFilterTag === 'politik') return lower.includes('politik') || lower.includes('kebijakan') || lower.includes('nasional') || lower.includes('kontan') || lower.includes('cnbc');
+              if (sourceFilterTag === 'daerah') return lower.includes('daerah') || lower.includes('metro') || lower.includes('peristiwa') || lower.includes('terkini') || lower.includes('suara') || lower.includes('liputan6') || lower.includes('merdeka') || lower.includes('detiknews');
+              if (sourceFilterTag === 'religi') return lower.includes('religi') || lower.includes('kalam') || lower.includes('humaniora') || lower.includes('khazanah') || lower.includes('hikmah') || lower.includes('gaya-hidup');
+              if (sourceFilterTag === 'sains') return lower.includes('warta bumi') || lower.includes('bencana') || lower.includes('sains');
               return true;
             })
             .map((src) => (

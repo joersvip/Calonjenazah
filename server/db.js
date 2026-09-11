@@ -243,7 +243,35 @@ try {
   db.prepare("DELETE FROM settings WHERE key = 'admin_password'").run();
 } catch (e) {}
 
-// Seed default crawler sources
+// Purge any foreign non-Indonesian crawler sources and their associated foreign articles
+try {
+  db.prepare(`
+    DELETE FROM crawler_sources 
+    WHERE url LIKE '%theguardian.com%' 
+       OR url LIKE '%aljazeera.com%' 
+       OR name LIKE '%The Guardian%' 
+       OR name LIKE '%Al Jazeera%'
+       OR url LIKE '%bbc.co.uk/news/%'
+  `).run();
+
+  db.prepare(`
+    DELETE FROM crawled_articles 
+    WHERE source_feed LIKE '%Guardian%' 
+       OR source_feed LIKE '%Jazeera%' 
+       OR link LIKE '%theguardian.com%' 
+       OR link LIKE '%aljazeera.com%'
+  `).run();
+
+  db.prepare(`
+    DELETE FROM articles 
+    WHERE source_name LIKE '%Guardian%' 
+       OR source_name LIKE '%Jazeera%' 
+       OR source_url LIKE '%theguardian.com%' 
+       OR source_url LIKE '%aljazeera.com%'
+  `).run();
+} catch (e) {}
+
+// Seed default crawler sources (100% Fokus Berita Indonesia Terpercaya)
 const insertSrc = db.prepare('INSERT OR IGNORE INTO crawler_sources (name, url, type, is_active) VALUES (?, ?, ?, ?)');
 const defaultSources = [
   ['Antara News - Terkini', 'https://www.antaranews.com/rss/terkini.xml', 'rss', 1],
@@ -252,18 +280,24 @@ const defaultSources = [
   ['Antara News - Warta Bumi (Bencana & Sains)', 'https://www.antaranews.com/rss/warta-bumi.xml', 'rss', 1],
   ['Antara News - Humaniora (Budaya & Religi)', 'https://www.antaranews.com/rss/humaniora.xml', 'rss', 1],
   ['CNN Indonesia - Nasional', 'https://www.cnnindonesia.com/nasional/rss', 'rss', 1],
-  ['CNN Indonesia - Internasional', 'https://www.cnnindonesia.com/internasional/rss', 'rss', 1],
+  ['CNN Indonesia - Gaya Hidup & Humaniora', 'https://www.cnnindonesia.com/gaya-hidup/rss', 'rss', 1],
   ['Tempo.co - Hukum & Investigasi', 'https://rss.tempo.co/hukum', 'rss', 1],
   ['Tempo.co - Nasional & Politik', 'https://rss.tempo.co/nasional', 'rss', 1],
-  ['Tempo.co - Dunia & Konflik', 'https://rss.tempo.co/dunia', 'rss', 1],
+  ['Tempo.co - Metro & Peristiwa', 'https://rss.tempo.co/metro', 'rss', 1],
+  ['Detikcom - DetikNews (Nasional)', 'https://rss.detik.com/index.php/detiknews', 'rss', 1],
+  ['Detikcom - Kolom & Opini', 'https://rss.detik.com/index.php/kolom', 'rss', 1],
+  ['Detikcom - Hikmah (Religi & Refleksi)', 'https://rss.detik.com/index.php/hikmah', 'rss', 1],
   ['Sindonews - Nasional', 'https://nasional.sindonews.com/rss', 'rss', 1],
   ['Sindonews - Kalam (Religi & Hikmah)', 'https://kalam.sindonews.com/rss', 'rss', 1],
+  ['Sindonews - Daerah & Peristiwa', 'https://daerah.sindonews.com/rss', 'rss', 1],
+  ['Republika - Khazanah & Religi', 'https://www.republika.co.id/rss/khazanah', 'rss', 1],
+  ['Republika - Nasional & Hukum', 'https://www.republika.co.id/rss/nasional', 'rss', 1],
   ['Kontan - Kebijakan & Nasional', 'https://nasional.kontan.co.id/rss', 'rss', 1],
-  ['BBC Indonesia', 'https://feeds.bbci.co.uk/indonesia/rss.xml', 'rss', 1],
-  ['CNBC Indonesia - News', 'https://www.cnbcindonesia.com/news/rss', 'rss', 1],
-  ['Detikcom - DetikNews', 'https://rss.detik.com/index.php/detiknews', 'rss', 1],
-  ['The Guardian - World News', 'https://www.theguardian.com/world/rss', 'rss', 1],
-  ['Al Jazeera - World News', 'https://www.aljazeera.com/xml/rss/all.xml', 'rss', 1]
+  ['CNBC Indonesia - News & Kebijakan', 'https://www.cnbcindonesia.com/news/rss', 'rss', 1],
+  ['Suara.com - Berita Nasional', 'https://www.suara.com/rss/news', 'rss', 1],
+  ['Liputan6 - Berita Terkini', 'https://feed.liputan6.com/rss', 'rss', 1],
+  ['Merdeka.com - Peristiwa & Kasus', 'https://www.merdeka.com/feed/', 'rss', 1],
+  ['BBC News Indonesia (Bahasa Indonesia)', 'https://feeds.bbci.co.uk/indonesia/rss.xml', 'rss', 1]
 ];
 for (const src of defaultSources) {
   try {
