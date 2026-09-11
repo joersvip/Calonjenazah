@@ -26,9 +26,12 @@ export default function ReuploadNews({ navigate }) {
 
   // Quick Preset Test Links
   const presetLinks = [
-    { label: 'Antara News', url: 'https://www.antaranews.com/berita/4488313/polri-bongkar-jaringan-narkoba-internasional' },
+    { label: 'CNN Indonesia', url: 'https://www.cnnindonesia.com/nasional/20241201-20-112345/sidang-kasus-suap-pejabat-kembali-digelar' },
+    { label: 'Tempo.co', url: 'https://nasional.tempo.co/read/1950012/kpk-usut-dugaan-korupsi-pengadaan-barang' },
     { label: 'Detikcom', url: 'https://news.detik.com/berita/d-7654321/kpk-tahan-tersangka-korupsi-proyek-infrastruktur' },
-    { label: 'CNN Indonesia', url: 'https://www.cnnindonesia.com/nasional/20241201-20-112345/sidang-kasus-suap-pejabat-kembali-digelar' }
+    { label: 'Antara News', url: 'https://www.antaranews.com/berita/4488313/polri-bongkar-jaringan-narkoba-internasional' },
+    { label: 'Sindonews', url: 'https://nasional.sindonews.com/read/1480021/12/sidang-sengketa-pilkada-digelar-di-mahkamah-konstitusi' },
+    { label: 'Kontan', url: 'https://nasional.kontan.co.id/news/kebijakan-anggaran-pemerintah-resmi-diumumkan' }
   ];
 
   // Perform Scrape

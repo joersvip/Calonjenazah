@@ -23,6 +23,8 @@ export default function CrawlerStudio({ navigate }) {
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlResult, setCrawlResult] = useState(null);
 
+  const [sourceSearch, setSourceSearch] = useState('');
+  const [sourceFilterTag, setSourceFilterTag] = useState('all');
   const [crawledArticles, setCrawledArticles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [targetCategory, setTargetCategory] = useState('auto');
@@ -251,13 +253,83 @@ export default function CrawlerStudio({ navigate }) {
         padding: '24px',
         marginBottom: '30px'
       }}>
-        <h3 className="display-font" style={{ fontSize: '1.05rem', fontWeight: '800', marginBottom: '16px', color: '#fff' }}>
-          Pilih Sumber Berita untuk Dicrawl
-        </h3>
+        {/* Source Header & Search Filter */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+          <div>
+            <h3 className="display-font" style={{ fontSize: '1.05rem', fontWeight: '800', color: '#fff', marginBottom: '4px' }}>
+              Pilih Sumber Berita untuk Dicrawl ({sources.length} Sumber Tersedia)
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Klik salah satu sumber media kredibel di bawah untuk langsung menarik berita terbaru ke antrian.
+            </p>
+          </div>
+
+          <div>
+            <input
+              type="text"
+              placeholder="Cari sumber (CNN, Tempo, Antara, Sindo...)"
+              value={sourceSearch}
+              onChange={(e) => setSourceSearch(e.target.value)}
+              style={{
+                background: '#0a0d14',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '7px 12px',
+                fontSize: '0.8rem',
+                color: '#fff',
+                width: '240px'
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Quick Filter Source Tags */}
+        <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '8px' }}>
+          {[
+            { id: 'all', label: `Semua Sumber (${sources.length})` },
+            { id: 'hukum', label: '⚖️ Hukum & Kriminal' },
+            { id: 'politik', label: '🏛️ Politik & Nasional' },
+            { id: 'global', label: '🌍 Global & Internasional' },
+            { id: 'religi', label: '✨ Religi & Sains' }
+          ].map(tag => (
+            <button
+              key={tag.id}
+              onClick={() => setSourceFilterTag(tag.id)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '16px',
+                fontSize: '0.72rem',
+                fontWeight: sourceFilterTag === tag.id ? '700' : '500',
+                background: sourceFilterTag === tag.id ? 'rgba(230,57,70,0.2)' : 'rgba(255,255,255,0.04)',
+                color: sourceFilterTag === tag.id ? '#ff858d' : 'var(--text-secondary)',
+                border: '1px solid',
+                borderColor: sourceFilterTag === tag.id ? 'var(--accent-crimson)' : 'rgba(255,255,255,0.06)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {tag.label}
+            </button>
+          ))}
+        </div>
 
         {/* Source preset buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-          {sources.map((src) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px', marginBottom: '20px' }}>
+          {sources
+            .filter(src => {
+              const q = sourceSearch.toLowerCase().trim();
+              const matchSearch = !q || src.name.toLowerCase().includes(q) || src.url.toLowerCase().includes(q);
+              if (!matchSearch) return false;
+
+              if (sourceFilterTag === 'all') return true;
+              const lower = (src.name + ' ' + src.url).toLowerCase();
+              if (sourceFilterTag === 'hukum') return lower.includes('hukum') || lower.includes('kriminal') || lower.includes('investigasi');
+              if (sourceFilterTag === 'politik') return lower.includes('politik') || lower.includes('kebijakan') || lower.includes('nasional') || lower.includes('kontan');
+              if (sourceFilterTag === 'global') return lower.includes('internasional') || lower.includes('dunia') || lower.includes('world') || lower.includes('bbc') || lower.includes('al jazeera') || lower.includes('the guardian') || lower.includes('cnbc');
+              if (sourceFilterTag === 'religi') return lower.includes('religi') || lower.includes('kalam') || lower.includes('humaniora') || lower.includes('warta bumi') || lower.includes('sains');
+              return true;
+            })
+            .map((src) => (
             <button
               key={src.id}
               onClick={() => {

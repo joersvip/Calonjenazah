@@ -140,22 +140,31 @@ if (catCount.count === 0) {
 }
 
 // Seed default crawler sources
-const srcCount = db.prepare('SELECT COUNT(*) as count FROM crawler_sources').get();
-if (srcCount.count === 0) {
-  const insertSrc = db.prepare('INSERT INTO crawler_sources (name, url, type, is_active) VALUES (?, ?, ?, ?)');
-  const defaultSources = [
-    ['Antara News - Terkini', 'https://www.antaranews.com/rss/terkini.xml', 'rss', 1],
-    ['Antara News - Hukum & Kriminal', 'https://www.antaranews.com/rss/hukum.xml', 'rss', 1],
-    ['Antara News - Politik', 'https://www.antaranews.com/rss/politik.xml', 'rss', 1],
-    ['BBC Indonesia', 'https://feeds.bbci.co.uk/indonesia/rss.xml', 'rss', 1],
-    ['CNBC Indonesia - News', 'https://www.cnbcindonesia.com/news/rss', 'rss', 1],
-    ['Detikcom - DetikNews', 'https://rss.detik.com/index.php/detiknews', 'rss', 1]
-  ];
-  for (const src of defaultSources) {
-    try {
-      insertSrc.run(...src);
-    } catch (e) {}
-  }
+const insertSrc = db.prepare('INSERT OR IGNORE INTO crawler_sources (name, url, type, is_active) VALUES (?, ?, ?, ?)');
+const defaultSources = [
+  ['Antara News - Terkini', 'https://www.antaranews.com/rss/terkini.xml', 'rss', 1],
+  ['Antara News - Hukum & Kriminal', 'https://www.antaranews.com/rss/hukum.xml', 'rss', 1],
+  ['Antara News - Politik', 'https://www.antaranews.com/rss/politik.xml', 'rss', 1],
+  ['Antara News - Warta Bumi (Bencana & Sains)', 'https://www.antaranews.com/rss/warta-bumi.xml', 'rss', 1],
+  ['Antara News - Humaniora (Budaya & Religi)', 'https://www.antaranews.com/rss/humaniora.xml', 'rss', 1],
+  ['CNN Indonesia - Nasional', 'https://www.cnnindonesia.com/nasional/rss', 'rss', 1],
+  ['CNN Indonesia - Internasional', 'https://www.cnnindonesia.com/internasional/rss', 'rss', 1],
+  ['Tempo.co - Hukum & Investigasi', 'https://rss.tempo.co/hukum', 'rss', 1],
+  ['Tempo.co - Nasional & Politik', 'https://rss.tempo.co/nasional', 'rss', 1],
+  ['Tempo.co - Dunia & Konflik', 'https://rss.tempo.co/dunia', 'rss', 1],
+  ['Sindonews - Nasional', 'https://nasional.sindonews.com/rss', 'rss', 1],
+  ['Sindonews - Kalam (Religi & Hikmah)', 'https://kalam.sindonews.com/rss', 'rss', 1],
+  ['Kontan - Kebijakan & Nasional', 'https://nasional.kontan.co.id/rss', 'rss', 1],
+  ['BBC Indonesia', 'https://feeds.bbci.co.uk/indonesia/rss.xml', 'rss', 1],
+  ['CNBC Indonesia - News', 'https://www.cnbcindonesia.com/news/rss', 'rss', 1],
+  ['Detikcom - DetikNews', 'https://rss.detik.com/index.php/detiknews', 'rss', 1],
+  ['The Guardian - World News', 'https://www.theguardian.com/world/rss', 'rss', 1],
+  ['Al Jazeera - World News', 'https://www.aljazeera.com/xml/rss/all.xml', 'rss', 1]
+];
+for (const src of defaultSources) {
+  try {
+    insertSrc.run(...src);
+  } catch (e) {}
 }
 
 // Seed default site settings
