@@ -18,7 +18,7 @@ npm start
 Aplikasi akan otomatis menyala di port `5000`:
 - **Portal Berita**: [http://localhost:5000](http://localhost:5000)
 - **Admin Dashboard**: [http://localhost:5000/#/admin](http://localhost:5000/#/admin)
-- **Login Admin Default**: `admin` / `admin123`
+- **Login Admin**: Sesuai konfigurasi kredensial di file `.env` (`ADMIN_DEFAULT_USER` & `ADMIN_DEFAULT_PASS`). Password dienkripsi dengan PBKDF2 hash.
 
 ---
 

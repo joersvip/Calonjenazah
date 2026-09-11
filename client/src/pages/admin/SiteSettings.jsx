@@ -7,7 +7,7 @@ export default function SiteSettings() {
     site_tagline: 'Portal Berita Kritis & Refleksi Kehidupan Tanpa Kompromi',
     site_description: 'Menyajikan jurnalisme investigasi, pengungkapan tabir kriminal, misteri, hukum, dan pengingat hakiki batas usia manusia.',
     ticker_text: 'PERINGATAN: Hidup ini singkat, kebenaran harus diungkap. • Sidang kasus korupsi kembali digelar maraton. • BMKG rilis peringatan dini cuaca ekstrem.',
-    admin_username: 'admin'
+    admin_username: ''
   });
   const [newPassword, setNewPassword] = useState('');
   const [saved, setSaved] = useState(false);
@@ -121,17 +121,24 @@ export default function SiteSettings() {
         </div>
 
         <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
-          <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff', marginBottom: '12px' }}>
-            Kredensial Akun Administrator
-          </h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <ShieldAlert size={16} color="var(--accent-red)" />
+            <h4 style={{ fontSize: '0.95rem', fontWeight: '700', color: '#fff' }}>
+              Keamanan Akun Administrator
+            </h4>
+          </div>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: '1.5' }}>
+            Password disimpan menggunakan enkripsi kriptografis tingkat tinggi (PBKDF2-SHA512 dengan salt acak) sehingga tidak dapat dibaca oleh pihak luar. Untuk manajemen multi-akun admin & hak akses, gunakan menu <strong>Manajemen Admin</strong>.
+          </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Username Admin</label>
               <input
                 type="text"
+                placeholder="Username akun admin"
                 value={settings.admin_username}
                 onChange={(e) => setSettings({ ...settings, admin_username: e.target.value })}
-                style={{ width: '100%', background: '#0a0d14', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px', fontSize: '0.85rem' }}
+                style={{ width: '100%', background: '#0a0d14', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px', fontSize: '0.85rem', color: '#fff' }}
               />
             </div>
             <div>
@@ -141,7 +148,7 @@ export default function SiteSettings() {
                 placeholder="Kosongkan jika tidak diubah"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                style={{ width: '100%', background: '#0a0d14', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px', fontSize: '0.85rem' }}
+                style={{ width: '100%', background: '#0a0d14', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '10px', fontSize: '0.85rem', color: '#fff' }}
               />
             </div>
           </div>

@@ -10,6 +10,7 @@ const {
 const { getSeoStatus, auditAndOptimizeSeo } = require('../services/seo');
 const { getAutoCrawlConfig, saveAutoCrawlConfig, runAutoCrawlJob } = require('../services/scheduler');
 const { getChatHistory, getOnlineAdminsList } = require('../services/adminChat');
+const { hashPassword, verifyPassword, generateSecureToken, verifySecureToken } = require('../services/authSecurity');
 
 // ==========================================
 // 1. PUBLIC ARTICLES & CONTENT ROUTES
@@ -353,72 +354,53 @@ router.post('/auth/login', (req, res) => {
       return res.status(400).json({ success: false, error: 'Username dan password wajib diisi' });
     }
 
-    // 1. Check in admins table
-    const admin = db.prepare("SELECT * FROM admins WHERE username = ? AND is_active = 1").get(username);
-    if (admin && admin.password === password) {
-      db.prepare("UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = ?").run(admin.id);
-      
-      // Automatically register admin client IP and public IP
-      const clientIp = extractClientIp(req);
-      db.registerAdminIp(clientIp, { 
-        username: admin.username, 
-        label: `Login Admin (${admin.display_name})`, 
-        source: 'login' 
-      });
-      if (req.body.publicIp) {
-        db.registerAdminIp(req.body.publicIp, { 
+    // 1. Verify against admins table
+    const cleanUsername = username.trim().toLowerCase();
+    const admin = db.prepare("SELECT * FROM admins WHERE LOWER(username) = ? AND is_active = 1").get(cleanUsername);
+
+    if (admin) {
+      const { verified, needsRehash } = verifyPassword(password, admin.password);
+      if (verified) {
+        // Transparently upgrade legacy plaintext password to PBKDF2 hash on successful login
+        if (needsRehash) {
+          try {
+            const newHashed = hashPassword(password);
+            db.prepare("UPDATE admins SET password = ? WHERE id = ?").run(newHashed, admin.id);
+          } catch (e) {}
+        }
+
+        db.prepare("UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = ?").run(admin.id);
+        
+        // Automatically register admin client IP and public IP
+        const clientIp = extractClientIp(req);
+        db.registerAdminIp(clientIp, { 
           username: admin.username, 
-          label: `Login Admin Public IP (${admin.display_name})`, 
+          label: `Login Admin (${admin.display_name})`, 
           source: 'login' 
         });
-      }
-
-      return res.json({
-        success: true,
-        token: 'auth_token_' + Buffer.from(`${admin.username}:${admin.id}:${Date.now()}`).toString('base64'),
-        user: {
-          id: admin.id,
-          username: admin.username,
-          display_name: admin.display_name,
-          role: admin.role,
-          email: admin.email,
-          avatar_url: admin.avatar_url
+        if (req.body.publicIp) {
+          db.registerAdminIp(req.body.publicIp, { 
+            username: admin.username, 
+            label: `Login Admin Public IP (${admin.display_name})`, 
+            source: 'login' 
+          });
         }
-      });
-    }
 
-    // 2. Fallback to settings
-    const savedUser = db.prepare("SELECT value FROM settings WHERE key = 'admin_username'").get();
-    const savedPass = db.prepare("SELECT value FROM settings WHERE key = 'admin_password'").get();
-    const expectedUser = savedUser ? savedUser.value : 'admin';
-    const expectedPass = savedPass ? savedPass.value : 'admin123';
+        const secureToken = generateSecureToken(admin);
 
-    if (username === expectedUser && password === expectedPass) {
-      const clientIp = extractClientIp(req);
-      db.registerAdminIp(clientIp, { 
-        username: expectedUser, 
-        label: 'Login Super Admin Default', 
-        source: 'login' 
-      });
-      if (req.body.publicIp) {
-        db.registerAdminIp(req.body.publicIp, { 
-          username: expectedUser, 
-          label: 'Login Super Admin Public IP', 
-          source: 'login' 
+        return res.json({
+          success: true,
+          token: secureToken,
+          user: {
+            id: admin.id,
+            username: admin.username,
+            display_name: admin.display_name,
+            role: admin.role,
+            email: admin.email,
+            avatar_url: admin.avatar_url
+          }
         });
       }
-
-      return res.json({
-        success: true,
-        token: 'auth_token_' + Buffer.from(`${username}:1:${Date.now()}`).toString('base64'),
-        user: {
-          id: 1,
-          username: 'admin',
-          display_name: 'Dewan Redaksi Utama',
-          role: 'Super Admin',
-          email: 'redaksi@calonjenazah.com'
-        }
-      });
     }
 
     res.status(401).json({ success: false, error: 'Username atau password salah' });
@@ -456,6 +438,8 @@ router.post('/admin/users', (req, res) => {
       return res.status(400).json({ success: false, error: `Username "${cleanUsername}" sudah digunakan oleh admin lain` });
     }
 
+    const hashedPassword = hashPassword(password.trim());
+
     const insert = db.prepare(`
       INSERT INTO admins (username, password, display_name, role, email, avatar_url)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -463,7 +447,7 @@ router.post('/admin/users', (req, res) => {
 
     const result = insert.run(
       cleanUsername,
-      password.trim(),
+      hashedPassword,
       display_name.trim(),
       role || 'Editor',
       email || '',
@@ -505,7 +489,7 @@ router.put('/admin/users/:id', (req, res) => {
 
     if (password && password.trim()) {
       query += `, password = ?`;
-      params.push(password.trim());
+      params.push(hashPassword(password.trim()));
     }
 
     query += ` WHERE id = ?`;
@@ -1304,11 +1288,25 @@ router.get('/settings', (req, res) => {
 
 router.post('/settings', (req, res) => {
   try {
-    const updates = req.body;
+    const updates = { ...req.body };
+
+    // If client submits a password update via site settings, update admin account securely with PBKDF2 hash
+    if (updates.admin_password && typeof updates.admin_password === 'string' && updates.admin_password.trim()) {
+      const passToUpdate = updates.admin_password.trim();
+      const targetUser = (updates.admin_username && updates.admin_username.trim()) || process.env.ADMIN_DEFAULT_USER || 'admin';
+      const adminAcc = db.prepare("SELECT id FROM admins WHERE LOWER(username) = ?").get(targetUser.toLowerCase());
+      if (adminAcc) {
+        db.prepare("UPDATE admins SET password = ? WHERE id = ?").run(hashPassword(passToUpdate), adminAcc.id);
+      }
+    }
+
+    // Never persist sensitive passwords into public settings table
+    delete updates.admin_password;
+
     const updateStmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
 
     for (const [key, val] of Object.entries(updates)) {
-      if (val !== undefined && val !== null) {
+      if (val !== undefined && val !== null && key !== 'admin_password') {
         updateStmt.run(key, String(val));
       }
     }

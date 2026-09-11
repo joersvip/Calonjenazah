@@ -2,6 +2,10 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
 
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('dotenv').config();
+const { hashPassword } = require('./services/authSecurity');
+
 const dbPath = path.join(__dirname, '..', 'data', 'calonjenazah.db');
 const dataDir = path.dirname(dbPath);
 
@@ -200,21 +204,43 @@ if (catCount.count === 0) {
   }
 }
 
-// Seed default admin if empty
+// Seed default admin if empty (credentials loaded securely from environment variables, never hardcoded plaintext)
 const adminCount = db.prepare('SELECT COUNT(*) as count FROM admins').get();
 if (adminCount.count === 0) {
+  const defaultUser = process.env.ADMIN_DEFAULT_USER || 'admin';
+  const defaultPass = process.env.ADMIN_DEFAULT_PASS || require('crypto').randomBytes(8).toString('hex');
+  const hashedPass = hashPassword(defaultPass);
   const insertAdmin = db.prepare(`
     INSERT INTO admins (username, password, display_name, role, email) 
     VALUES (?, ?, ?, ?, ?)
   `);
   insertAdmin.run(
-    'admin',
-    'admin123',
+    defaultUser,
+    hashedPass,
     'Dewan Redaksi Utama',
     'Super Admin',
     'redaksi@calonjenazah.com'
   );
+  if (!process.env.ADMIN_DEFAULT_PASS) {
+    console.log(`[Security] Generated initial admin password: ${defaultPass} (Harap simpan atau atur di file .env)`);
+  }
 }
+
+// Security: Migrate any existing legacy plaintext admin passwords to PBKDF2 hash
+try {
+  const unhashedAdmins = db.prepare("SELECT id, password FROM admins WHERE password NOT LIKE 'pbkdf2$%'").all();
+  for (const a of unhashedAdmins) {
+    if (a.password) {
+      const hashed = hashPassword(a.password);
+      db.prepare("UPDATE admins SET password = ? WHERE id = ?").run(hashed, a.id);
+    }
+  }
+} catch (e) {}
+
+// Security: Remove any legacy admin_password from settings table to prevent credential exposure
+try {
+  db.prepare("DELETE FROM settings WHERE key = 'admin_password'").run();
+} catch (e) {}
 
 // Seed default crawler sources
 const insertSrc = db.prepare('INSERT OR IGNORE INTO crawler_sources (name, url, type, is_active) VALUES (?, ?, ?, ?)');
@@ -244,13 +270,11 @@ for (const src of defaultSources) {
   } catch (e) {}
 }
 
-// Seed default site settings
+// Seed default site settings (public / editorial metadata only)
 const setInit = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
 setInit.run('site_name', 'CALON JENAZAH');
 setInit.run('site_tagline', 'Portal Berita Kritis & Refleksi Kehidupan Tanpa Kompromi');
 setInit.run('site_description', 'Menyajikan jurnalisme mendalam, pengungkapan tabir kriminal, misteri, hukum, dan pengingat bahwa kekuasaan serta harta hanyalah sementara.');
-setInit.run('admin_username', 'admin');
-setInit.run('admin_password', 'admin123'); // Simple credential for project
 setInit.run('ticker_text', 'PERINGATAN: Hidup ini singkat, kebenaran harus diungkap. • Sidang kasus korupsi kembali digelar maraton. • BMKG rilis peringatan dini cuaca ekstrem. • Fenomena alam langka kembali disorot ilmuwan.');
 
 // Seed initial rich articles if none exist
