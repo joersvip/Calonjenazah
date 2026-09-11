@@ -848,13 +848,27 @@ router.post('/crawler/save-all-pending', (req, res) => {
   }
 });
 
-// Get crawled articles with rich duplicate matching with published articles
+// Helper to parse article timestamp reliably
+function parseArticleTimestamp(article) {
+  let pubTime = null;
+  if (article.pub_date) {
+    const parsed = new Date(article.pub_date).getTime();
+    if (!isNaN(parsed)) pubTime = parsed;
+  }
+  if (!pubTime && article.created_at) {
+    const parsed = new Date(article.created_at.replace(' ', 'T') + 'Z').getTime();
+    if (!isNaN(parsed)) pubTime = parsed;
+  }
+  return pubTime || Date.now();
+}
+
+// Get crawled articles with rich duplicate matching with published articles and 24h timeframe filter
 router.get('/crawler/articles', (req, res) => {
   try {
     // Run bidirectional sync to make sure statuses match published articles
     syncCrawledWithArticles();
 
-    const { status = 'all' } = req.query;
+    const { status = 'all', timeframe = '24h' } = req.query;
     let query = `
       SELECT c.*,
              a.id as uploaded_article_id,
@@ -879,12 +893,41 @@ router.get('/crawler/articles', (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY c.created_at DESC LIMIT 1000';
+    query += ' ORDER BY c.created_at DESC LIMIT 2000';
 
-    const articles = db.prepare(query).all(...params);
+    const rawArticles = db.prepare(query).all(...params);
+    const now = Date.now();
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
 
-    // Also get overall counts
-    const counts = db.prepare(`
+    const enriched = rawArticles.map(item => {
+      const pubTime = parseArticleTimestamp(item);
+      const diff = now - pubTime;
+      const isWithin24h = diff <= twentyFourHoursMs && diff >= -2 * 60 * 60 * 1000;
+      const ageMinutes = Math.max(0, Math.round(diff / 60000));
+      const ageHours = Math.max(0, Math.round(diff / 3600000));
+      return {
+        ...item,
+        pub_time_ms: pubTime,
+        age_minutes: ageMinutes,
+        age_hours: ageHours,
+        is_within_24h: isWithin24h
+      };
+    });
+
+    // Default: return only news from past 24 hours unless explicitly 'all'
+    const filteredArticles = timeframe === 'all' 
+      ? enriched 
+      : enriched.filter(a => a.is_within_24h);
+
+    // Sort newest first based on actual pub_time_ms
+    filteredArticles.sort((a, b) => b.pub_time_ms - a.pub_time_ms);
+
+    // Calculate queue counts for the active dataset
+    const importedCount = filteredArticles.filter(a => a.status === 'imported' || Boolean(a.uploaded_article_id)).length;
+    const pendingCount = filteredArticles.length - importedCount;
+
+    // Also get overall counts across all time
+    const allCounts = db.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN c.status = 'imported' OR a.id IS NOT NULL THEN 1 ELSE 0 END) as importedCount,
@@ -898,11 +941,15 @@ router.get('/crawler/articles', (req, res) => {
 
     res.json({ 
       success: true, 
-      articles,
+      timeframe,
+      articles: filteredArticles,
       counts: {
-        total: counts.total || 0,
-        imported: counts.importedCount || 0,
-        pending: counts.pendingCount || 0
+        total: filteredArticles.length,
+        imported: importedCount,
+        pending: pendingCount,
+        allTotal: allCounts.total || 0,
+        allImported: allCounts.importedCount || 0,
+        allPending: allCounts.pendingCount || 0
       }
     });
   } catch (error) {

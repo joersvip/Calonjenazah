@@ -51,6 +51,7 @@ export default function CrawlerStudio({ navigate }) {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'imported'
   const [queueSearch, setQueueSearch] = useState('');
+  const [timeframe, setTimeframe] = useState('24h'); // '24h' | 'all'
   const [isSyncingWithArticles, setIsSyncingWithArticles] = useState(false);
   const [syncArticlesMsg, setSyncArticlesMsg] = useState('');
   const [syncing, setSyncing] = useState(false);
@@ -61,8 +62,9 @@ export default function CrawlerStudio({ navigate }) {
   const [importResultMsg, setImportResultMsg] = useState('');
   const [previewItem, setPreviewItem] = useState(null);
 
-  // Fetch presets and crawled history
-  const loadData = () => {
+  // Fetch presets and crawled history (default: 24 hours)
+  const loadData = (overrideTimeframe) => {
+    const activeTf = overrideTimeframe !== undefined ? overrideTimeframe : timeframe;
     fetch('/api/crawler/sources')
       .then(res => res.json())
       .then(data => {
@@ -74,7 +76,7 @@ export default function CrawlerStudio({ navigate }) {
       })
       .catch(() => {});
 
-    fetch('/api/crawler/articles')
+    fetch(`/api/crawler/articles?timeframe=${activeTf}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -91,6 +93,11 @@ export default function CrawlerStudio({ navigate }) {
         }
       })
       .catch(() => {});
+  };
+
+  const handleTimeframeChange = (newTf) => {
+    setTimeframe(newTf);
+    loadData(newTf);
   };
 
   const handleSaveScheduler = (e) => {
@@ -277,8 +284,11 @@ export default function CrawlerStudio({ navigate }) {
       });
   };
 
-  // Filtered queue items based on categoryFilter, statusFilter, and queueSearch
+  // Filtered queue items based on timeframe, categoryFilter, statusFilter, and queueSearch
   const filteredArticles = crawledArticles.filter(item => {
+    if (timeframe === '24h' && item.is_within_24h === false) {
+      return false;
+    }
     if (categoryFilter !== 'all' && String(item.category_id) !== String(categoryFilter)) {
       return false;
     }
@@ -1110,8 +1120,19 @@ export default function CrawlerStudio({ navigate }) {
           background: '#0c0f16'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <h3 className="display-font" style={{ fontSize: '1rem', fontWeight: '800', color: '#fff' }}>
-              Antrian Berita Hasil Crawl ({crawledArticles.length})
+            <h3 className="display-font" style={{ fontSize: '1rem', fontWeight: '800', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Antrian Berita Hasil Crawl</span>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: '700',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                background: timeframe === '24h' ? 'rgba(230,57,70,0.2)' : 'rgba(255,255,255,0.08)',
+                color: timeframe === '24h' ? '#ff8585' : 'var(--text-secondary)',
+                border: timeframe === '24h' ? '1px solid rgba(230,57,70,0.4)' : '1px solid rgba(255,255,255,0.1)'
+              }}>
+                {timeframe === '24h' ? '⏰ 24 Jam Terakhir' : 'Semua Arsip'} ({filteredArticles.length})
+              </span>
             </h3>
 
             {/* Server Auto-Save Active Badge */}
@@ -1346,6 +1367,62 @@ export default function CrawlerStudio({ navigate }) {
           gap: '10px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Timeframe Filter Pill: 24 Jam Terakhir vs Semua Arsip */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '20px',
+              padding: '2px',
+              marginRight: '6px'
+            }}>
+              <button
+                type="button"
+                onClick={() => handleTimeframeChange('24h')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '0.72rem',
+                  fontWeight: timeframe === '24h' ? '700' : '500',
+                  background: timeframe === '24h' ? 'linear-gradient(135deg, rgba(230,57,70,0.35), rgba(230,57,70,0.15))' : 'transparent',
+                  color: timeframe === '24h' ? '#ff6b6b' : 'var(--text-secondary)',
+                  border: timeframe === '24h' ? '1px solid rgba(230,57,70,0.5)' : '1px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+                title="Tampilkan hanya berita terbaru dalam 24 jam kebelakang"
+              >
+                <Clock size={12} color={timeframe === '24h' ? '#ff6b6b' : 'currentColor'} />
+                <span>⏰ 24 Jam Terakhir</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTimeframeChange('all')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 12px',
+                  borderRadius: '16px',
+                  fontSize: '0.72rem',
+                  fontWeight: timeframe === 'all' ? '700' : '500',
+                  background: timeframe === 'all' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                  color: timeframe === 'all' ? '#fff' : 'var(--text-secondary)',
+                  border: timeframe === 'all' ? '1px solid rgba(255,255,255,0.3)' : '1px solid transparent',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+                title="Tampilkan semua arsip berita tanpa batasan waktu"
+              >
+                <Calendar size={12} />
+                <span>Semua Arsip</span>
+              </button>
+            </div>
+
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status Berita:</span>
             <button
               type="button"
@@ -1617,8 +1694,46 @@ export default function CrawlerStudio({ navigate }) {
                         </select>
                       </td>
 
-                      <td style={{ padding: '10px 14px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {new Date(item.pub_date || item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                      <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            {item.is_within_24h ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                color: '#34d399',
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                fontSize: '0.68rem',
+                                fontWeight: '700'
+                              }}>
+                                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#34d399' }} />
+                                {item.age_hours === 0 ? `${item.age_minutes || 1} mnt lalu` : `${item.age_hours} jam lalu`}
+                              </span>
+                            ) : (
+                              <span style={{
+                                fontSize: '0.68rem',
+                                color: 'var(--text-muted)',
+                                background: 'rgba(255,255,255,0.06)',
+                                padding: '1px 6px',
+                                borderRadius: '10px'
+                              }}>
+                                {Math.floor((item.age_hours || 24) / 24)} hari lalu
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {new Date(item.pub_date || item.created_at).toLocaleDateString('id-ID', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
                       </td>
 
                       <td style={{ padding: '10px 14px' }}>
