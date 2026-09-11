@@ -80,6 +80,15 @@ db.exec(`
     referrer TEXT,
     session_id TEXT,
     duration_seconds INTEGER DEFAULT 0,
+    device_brand TEXT,
+    device_model TEXT,
+    cpu_cores INTEGER,
+    ram_gb REAL,
+    touch_support INTEGER DEFAULT 0,
+    pixel_ratio REAL DEFAULT 1.0,
+    timezone TEXT,
+    zip_code TEXT,
+    connection_type TEXT,
     visited_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -140,12 +149,25 @@ db.exec(`
 `);
 
 // Safe column migrations for existing databases
-try {
-  db.exec('ALTER TABLE crawled_articles ADD COLUMN category_id INTEGER');
-} catch (e) {}
-try {
-  db.exec('ALTER TABLE crawled_articles ADD COLUMN category_name TEXT');
-} catch (e) {}
+const migrations = [
+  'ALTER TABLE crawled_articles ADD COLUMN category_id INTEGER',
+  'ALTER TABLE crawled_articles ADD COLUMN category_name TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN device_brand TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN device_model TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN cpu_cores INTEGER',
+  'ALTER TABLE visitor_logs ADD COLUMN ram_gb REAL',
+  'ALTER TABLE visitor_logs ADD COLUMN touch_support INTEGER DEFAULT 0',
+  'ALTER TABLE visitor_logs ADD COLUMN pixel_ratio REAL DEFAULT 1.0',
+  'ALTER TABLE visitor_logs ADD COLUMN timezone TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN zip_code TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN connection_type TEXT'
+];
+
+for (const mig of migrations) {
+  try {
+    db.exec(mig);
+  } catch (e) {}
+}
 
 // Seed default categories if empty
 const catCount = db.prepare('SELECT COUNT(*) as count FROM categories').get();

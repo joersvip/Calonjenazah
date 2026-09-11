@@ -3,7 +3,10 @@ const router = express.Router();
 const db = require('../db');
 const { scrapeNewsFromUrl } = require('../services/scraper');
 const { crawlFeed, importCrawledArticle } = require('../services/crawler');
-const { extractClientIp, resolveGeo, parseUserAgent, logVisit, getVisitorAnalytics, activeVisitors } = require('../services/tracker');
+const { 
+  extractClientIp, resolveGeo, resolveGeoOnline, parseUserAgent, 
+  logVisit, getVisitorAnalytics, activeVisitors 
+} = require('../services/tracker');
 const { getSeoStatus, auditAndOptimizeSeo } = require('../services/seo');
 const { getAutoCrawlConfig, saveAutoCrawlConfig, runAutoCrawlJob } = require('../services/scheduler');
 const { getChatHistory, getOnlineAdminsList } = require('../services/adminChat');
@@ -221,7 +224,12 @@ router.post('/analytics/track', (req, res) => {
   try {
     const clientIp = extractClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
-    const { pageUrl, pageTitle, articleId, referrer, sessionId, screenResolution, durationSeconds } = req.body;
+    const { 
+      pageUrl, pageTitle, articleId, referrer, sessionId, 
+      screenResolution, durationSeconds,
+      deviceBrand, deviceModel, cpuCores, ramGb, touchSupport,
+      pixelRatio, timezone, zipCode, connectionType, clientGeo
+    } = req.body;
 
     const logRecord = logVisit({
       ip: clientIp,
@@ -232,10 +240,31 @@ router.post('/analytics/track', (req, res) => {
       referrer,
       sessionId,
       screenResolution,
-      durationSeconds
+      durationSeconds,
+      deviceBrand,
+      deviceModel,
+      cpuCores,
+      ramGb,
+      touchSupport,
+      pixelRatio,
+      timezone,
+      zipCode,
+      connectionType,
+      clientGeo
     });
 
     res.json({ success: true, data: logRecord });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Direct online IP resolution endpoint using free internet API
+router.get('/analytics/resolve-ip/:ip', async (req, res) => {
+  try {
+    const { ip } = req.params;
+    const geo = await resolveGeoOnline(ip);
+    res.json({ success: true, geo });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -930,16 +959,19 @@ router.get('/analytics/export-csv', (req, res) => {
   try {
     const logs = db.prepare(`
       SELECT id, ip, country, city, region, latitude, longitude, isp,
-             device_type, os, os_version, browser, browser_version,
-             screen_resolution, page_title, page_url, referrer, duration_seconds, visited_at
+             device_type, device_brand, device_model, os, os_version, browser, browser_version,
+             screen_resolution, pixel_ratio, cpu_cores, ram_gb, touch_support,
+             timezone, zip_code, connection_type,
+             page_title, page_url, referrer, duration_seconds, visited_at
       FROM visitor_logs 
       ORDER BY visited_at DESC
     `).all();
 
     const headers = [
-      'ID', 'IP Address', 'Negara', 'Kota', 'Wilayah', 'Latitude', 'Longitude',
-      'ISP', 'Perangkat', 'Sistem Operasi', 'OS Version', 'Browser', 'Browser Version',
-      'Resolusi Layar', 'Halaman Berita', 'URL', 'Referrer', 'Durasi (Detik)', 'Waktu Kunjungan'
+      'ID', 'IP Address', 'Negara', 'Kota', 'Wilayah', 'Kode Pos', 'Latitude', 'Longitude',
+      'ISP', 'Tipe Perangkat', 'Brand', 'Model', 'Sistem Operasi', 'OS Version', 'Browser', 'Browser Version',
+      'Resolusi Layar', 'Pixel Ratio (DPR)', 'CPU Cores', 'RAM (GB)', 'Touch Support', 'Koneksi', 'Zona Waktu',
+      'Halaman Berita', 'URL', 'Referrer', 'Durasi (Detik)', 'Waktu Kunjungan'
     ];
 
     const csvRows = [headers.join(',')];
@@ -951,15 +983,24 @@ router.get('/analytics/export-csv', (req, res) => {
         `"${log.country || ''}"`,
         `"${log.city || ''}"`,
         `"${log.region || ''}"`,
+        `"${log.zip_code || ''}"`,
         log.latitude,
         log.longitude,
         `"${log.isp || ''}"`,
         `"${log.device_type || ''}"`,
+        `"${log.device_brand || ''}"`,
+        `"${log.device_model || ''}"`,
         `"${log.os || ''}"`,
         `"${log.os_version || ''}"`,
         `"${log.browser || ''}"`,
         `"${log.browser_version || ''}"`,
         `"${log.screen_resolution || ''}"`,
+        log.pixel_ratio || 1.0,
+        log.cpu_cores || 4,
+        log.ram_gb || 8,
+        log.touch_support ? 'Ya' : 'Tidak',
+        `"${log.connection_type || ''}"`,
+        `"${log.timezone || ''}"`,
         `"${(log.page_title || '').replace(/"/g, '""')}"`,
         `"${log.page_url || ''}"`,
         `"${log.referrer || ''}"`,

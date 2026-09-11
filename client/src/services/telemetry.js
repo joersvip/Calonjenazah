@@ -7,9 +7,156 @@ let activePage = '/';
 let activeTitle = 'Calon Jenazah';
 let activeArticleId = null;
 
+// Cached client-side internet IP and Geolocation
+let cachedClientGeo = null;
+let isResolvingClientGeo = false;
+
+/**
+ * Collect detailed client hardware & display telemetry
+ */
+export function getClientDeviceSpecs() {
+  const width = window.screen?.width || window.innerWidth || 1920;
+  const height = window.screen?.height || window.innerHeight || 1080;
+  const viewportW = window.innerWidth || width;
+  const viewportH = window.innerHeight || height;
+  const dpr = window.devicePixelRatio || 1;
+  const touch = Boolean('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0));
+  const cores = navigator.hardwareConcurrency || 4;
+  const memory = navigator.deviceMemory || (cores >= 8 ? 16 : 8);
+  const conn = navigator.connection?.effectiveType || '4G/WiFi';
+  const orientation = window.screen?.orientation?.type || (viewportW > viewportH ? 'landscape-primary' : 'portrait-primary');
+  const lang = navigator.language || 'id-ID';
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta';
+
+  // Basic device type detection
+  let deviceType = 'Desktop';
+  const ua = navigator.userAgent || '';
+  if (/iPad|Tablet/i.test(ua) || (touch && width >= 600 && width <= 1024)) {
+    deviceType = 'Tablet';
+  } else if (/Android|iPhone|iPod|Mobile/i.test(ua) || (touch && width < 600)) {
+    deviceType = 'Mobile';
+  }
+
+  // Model & Brand heuristic
+  let deviceBrand = 'Workstation';
+  let deviceModel = 'PC/Desktop';
+  if (/iPhone/i.test(ua)) {
+    deviceBrand = 'Apple';
+    deviceModel = 'Apple iPhone';
+  } else if (/iPad/i.test(ua)) {
+    deviceBrand = 'Apple';
+    deviceModel = 'Apple iPad';
+  } else if (/Macintosh/i.test(ua)) {
+    deviceBrand = 'Apple';
+    deviceModel = 'Apple MacBook/Mac';
+  } else if (/Samsung|SM-[A-Za-z0-9]+/i.test(ua)) {
+    deviceBrand = 'Samsung';
+    const m = ua.match(/SM-[A-Za-z0-9]+/i);
+    deviceModel = m ? m[0] : 'Samsung Galaxy';
+  } else if (/Xiaomi|Redmi|POCO/i.test(ua)) {
+    deviceBrand = 'Xiaomi';
+    deviceModel = 'Xiaomi / Redmi';
+  } else if (/Windows/i.test(ua)) {
+    deviceBrand = 'Microsoft / PC';
+    deviceModel = 'Windows Workstation';
+  } else if (/Linux/i.test(ua)) {
+    deviceBrand = 'Linux System';
+    deviceModel = 'Linux Desktop';
+  }
+
+  return {
+    screenResolution: `${width}x${height}`,
+    viewport: `${viewportW}x${viewportH}`,
+    pixelRatio: Number(dpr.toFixed(2)),
+    orientation,
+    touchSupport: touch,
+    cpuCores: cores,
+    ramGb: memory,
+    connectionType: conn,
+    language: lang,
+    timezone: tz,
+    deviceType,
+    deviceBrand,
+    deviceModel
+  };
+}
+
+/**
+ * Asynchronously fetch internet public IP & Geolocation from free open internet API
+ */
+export async function fetchInternetLocation() {
+  if (cachedClientGeo) return cachedClientGeo;
+  if (isResolvingClientGeo) return null;
+  isResolvingClientGeo = true;
+
+  try {
+    // Try primary: ip-api.com
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch('http://ip-api.com/json/?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query', {
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    const data = await res.json();
+
+    if (data && data.status === 'success') {
+      cachedClientGeo = {
+        ip: data.query,
+        country: data.country,
+        country_code: data.countryCode,
+        region: data.regionName || data.region,
+        city: data.city,
+        zip_code: data.zip,
+        latitude: data.lat,
+        longitude: data.lon,
+        isp: data.isp,
+        org: data.org,
+        as_number: data.as,
+        timezone: data.timezone
+      };
+      isResolvingClientGeo = false;
+      return cachedClientGeo;
+    }
+  } catch (e) {
+    // Primary failed, try fallback
+  }
+
+  try {
+    // Fallback: ipwhois.app
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch('https://ipwhois.app/json/', { signal: controller.signal });
+    clearTimeout(timeout);
+    const data = await res.json();
+
+    if (data && data.success) {
+      cachedClientGeo = {
+        ip: data.ip,
+        country: data.country,
+        country_code: data.country_code,
+        region: data.region,
+        city: data.city,
+        zip_code: data.postal || '',
+        latitude: data.latitude,
+        longitude: data.longitude,
+        isp: data.isp,
+        org: data.org,
+        as_number: data.asn,
+        timezone: data.timezone
+      };
+      isResolvingClientGeo = false;
+      return cachedClientGeo;
+    }
+  } catch (e) {
+    // Fallback failed
+  }
+
+  isResolvingClientGeo = false;
+  return null;
+}
+
 export function getSocket() {
   if (!socket) {
-    // Determine socket target
     const socketUrl = window.location.port === '3000' ? 'http://localhost:5000' : '/';
     socket = io(socketUrl, {
       query: {
@@ -28,33 +175,46 @@ export function reportNavigation(pageUrl, pageTitle, articleId = null) {
   activeArticleId = articleId;
 
   const sock = getSocket();
-  const screenResolution = `${window.screen.width}x${window.screen.height}`;
+  const specs = getClientDeviceSpecs();
 
-  // Emit real-time telemetry via WebSocket
-  sock.emit('visitor_telemetry', {
-    pageUrl,
-    pageTitle,
-    articleId,
-    screenResolution,
-    sessionId: currentSessionId
-  });
+  const emitTelemetry = (clientGeo = null) => {
+    const payload = {
+      pageUrl,
+      pageTitle,
+      articleId,
+      referrer: document.referrer || 'Direct',
+      sessionId: currentSessionId,
+      durationSeconds: Math.floor((Date.now() - startTime) / 1000),
+      ...specs
+    };
 
-  // Also send HTTP beacon for persistent database logging
-  const payload = {
-    pageUrl,
-    pageTitle,
-    articleId,
-    referrer: document.referrer || 'Direct',
-    sessionId: currentSessionId,
-    screenResolution,
-    durationSeconds: Math.floor((Date.now() - startTime) / 1000)
+    if (clientGeo) {
+      payload.clientGeo = clientGeo;
+      payload.publicIp = clientGeo.ip;
+    }
+
+    // Emit real-time telemetry via WebSocket
+    sock.emit('visitor_telemetry', payload);
+
+    // Also send HTTP beacon for persistent database logging
+    fetch('/api/analytics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
   };
 
-  fetch('/api/analytics/track', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).catch(() => {});
+  // Immediate emit with device specs
+  emitTelemetry(cachedClientGeo);
+
+  // If client internet location not yet resolved, resolve in background and re-emit
+  if (!cachedClientGeo) {
+    fetchInternetLocation().then((geo) => {
+      if (geo) {
+        emitTelemetry(geo);
+      }
+    });
+  }
 }
 
 // Subscribe to Live Visitors on Admin
