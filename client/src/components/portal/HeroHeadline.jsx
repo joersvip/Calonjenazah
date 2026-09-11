@@ -6,27 +6,21 @@ export default function HeroHeadline({ featuredArticle, secondaryArticles = [], 
 
   return (
     <section style={{ marginBottom: '40px' }}>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: '24px'
-      }}>
+      <div className="hero-grid">
         {/* Main Hero Card (Large) */}
         <div
           onClick={() => navigate(`/berita/${featuredArticle.slug}`)}
+          className="hero-main-card"
           style={{
             position: 'relative',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
-            minHeight: '460px',
             cursor: 'pointer',
-            gridColumn: 'span 2',
             boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
             border: '1px solid var(--border-subtle)',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'flex-end',
-            padding: '36px'
+            justifyContent: 'flex-end'
           }}
         >
           {/* Background Image with Dark Vignette Gradient */}
@@ -56,7 +50,7 @@ export default function HeroHeadline({ featuredArticle, secondaryArticles = [], 
 
           {/* Foreground Info */}
           <div style={{ position: 'relative', zIndex: 3, maxWidth: '820px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
               <span style={{
                 background: 'var(--accent-crimson)',
                 color: '#fff',
@@ -77,8 +71,7 @@ export default function HeroHeadline({ featuredArticle, secondaryArticles = [], 
               </span>
             </div>
 
-            <h2 className="editorial-title" style={{
-              fontSize: '2.2rem',
+            <h2 className="editorial-title hero-title-text" style={{
               color: '#ffffff',
               lineHeight: 1.25,
               marginBottom: '14px',

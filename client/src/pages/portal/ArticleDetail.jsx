@@ -211,8 +211,7 @@ export default function ArticleDetail({ slug, navigate }) {
         </div>
 
         {/* Main Title */}
-        <h1 className="editorial-title" style={{
-          fontSize: '2.4rem',
+        <h1 className="editorial-title article-headline" style={{
           lineHeight: 1.25,
           color: '#ffffff',
           marginBottom: '16px',
@@ -222,8 +221,7 @@ export default function ArticleDetail({ slug, navigate }) {
         </h1>
 
         {/* Excerpt Lead */}
-        <p style={{
-          fontSize: '1.15rem',
+        <p className="article-lead" style={{
           lineHeight: 1.6,
           color: 'var(--text-secondary)',
           borderLeft: '3px solid var(--accent-crimson)',
@@ -437,7 +435,8 @@ export default function ArticleDetail({ slug, navigate }) {
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          flexWrap: 'wrap',
+          gap: '10px',
           padding: '16px 0',
           borderTop: '1px solid var(--border-subtle)',
           borderBottom: '1px solid var(--border-subtle)',

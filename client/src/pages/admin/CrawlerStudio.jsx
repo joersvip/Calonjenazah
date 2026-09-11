@@ -310,7 +310,7 @@ export default function CrawlerStudio({ navigate }) {
           </div>
 
           {/* Import Action */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Kategori Masuk:</span>
             <select
               value={targetCategory}
@@ -361,7 +361,7 @@ export default function CrawlerStudio({ navigate }) {
         )}
 
         {/* Crawled List Table */}
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-responsive" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>

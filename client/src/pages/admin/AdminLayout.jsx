@@ -188,6 +188,8 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
     );
   }
 
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
   const navItems = [
     { id: 'overview', label: 'Ringkasan Portal', icon: LayoutDashboard },
     { id: 'live-tracking', label: 'Peta Live Pengunjung', icon: Radio, badge: liveVisitors.length || '0' },
@@ -199,207 +201,283 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-main)' }}>
-      {/* Admin Sidebar */}
-      <aside style={{
-        width: '260px',
-        minWidth: '260px',
-        background: '#0c0f16',
-        borderRight: '1px solid var(--border-subtle)',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        height: '100vh',
-        zIndex: 100
-      }}>
-        <div>
-          {/* Logo Brand Header */}
-          <div style={{
-            padding: '24px 20px',
-            borderBottom: '1px solid var(--border-subtle)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px'
-          }}>
-            <div style={{
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--bg-main)' }}>
+      {/* Mobile Top Header (Shown on screens <= 992px) */}
+      <header className="admin-mobile-topbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               width: '38px',
               height: '38px',
-              background: 'var(--accent-crimson)',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <ShieldAlert size={22} color="#fff" />
-            </div>
-            <div>
-              <h2 className="brand-font" style={{ fontSize: '1.15rem', color: '#fff', letterSpacing: '1px', lineHeight: 1 }}>
-                CALON <span style={{ color: 'var(--accent-crimson)' }}>JENAZAH</span>
-              </h2>
-              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Redaksi Administrator
-              </span>
-            </div>
+              background: 'rgba(255,255,255,0.06)',
+              borderRadius: '6px',
+              color: '#fff',
+              border: '1px solid var(--border-subtle)'
+            }}
+            aria-label="Menu Admin"
+          >
+            {isMobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldAlert size={20} color="var(--accent-crimson)" />
+            <span className="brand-font" style={{ fontSize: '1rem', fontWeight: '900', color: '#fff' }}>
+              ADMIN <span style={{ color: 'var(--accent-crimson)' }}>PANEL</span>
+            </span>
           </div>
-
-          {/* Navigation Links */}
-          <nav style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    fontSize: '0.85rem',
-                    fontWeight: isActive ? '700' : '500',
-                    background: isActive ? 'rgba(230,57,70,0.15)' : 'transparent',
-                    color: isActive ? '#fff' : 'var(--text-secondary)',
-                    border: '1px solid',
-                    borderColor: isActive ? 'rgba(230,57,70,0.3)' : 'transparent',
-                    textAlign: 'left',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-                      e.currentTarget.style.color = '#fff';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = 'var(--text-secondary)';
-                    }
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Icon size={18} color={isActive ? 'var(--accent-crimson)' : 'currentColor'} />
-                    <span>{item.label}</span>
-                  </div>
-
-                  {item.badge !== undefined && (
-                    <span style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      background: 'rgba(16,185,129,0.15)',
-                      color: '#34d399',
-                      border: '1px solid rgba(16,185,129,0.3)',
-                      fontSize: '0.7rem',
-                      fontWeight: '800',
-                      padding: '2px 8px',
-                      borderRadius: '12px'
-                    }}>
-                      <span className="pulsing-dot-green" style={{ width: '6px', height: '6px' }}></span>
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
         </div>
 
-        {/* Sidebar Footer */}
-        <div style={{ padding: '16px 14px', borderTop: '1px solid var(--border-subtle)' }}>
-          <button
-            onClick={() => navigate('/')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              width: '100%',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontSize: '0.8rem',
-              color: 'var(--text-secondary)',
-              marginBottom: '6px'
-            }}
-          >
-            <ExternalLink size={15} />
-            <span>Lihat Portal Berita</span>
-          </button>
-
-          <button
-            onClick={handleLogout}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              width: '100%',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontSize: '0.8rem',
-              color: '#ef4444'
-            }}
-          >
-            <LogOut size={15} />
-            <span>Keluar Sesi</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Admin Content View */}
-      <main style={{ flex: 1, padding: '30px 36px', overflowY: 'auto', maxHeight: '100vh' }}>
-        {/* Top bar with live status */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '26px',
-          borderBottom: '1px solid var(--border-subtle)',
-          paddingBottom: '16px'
+          gap: '6px',
+          background: 'rgba(16,185,129,0.15)',
+          color: '#34d399',
+          border: '1px solid rgba(16,185,129,0.3)',
+          fontSize: '0.72rem',
+          fontWeight: '800',
+          padding: '3px 10px',
+          borderRadius: '12px'
+        }}>
+          <span className="pulsing-dot-green" style={{ width: '6px', height: '6px' }}></span>
+          <span>{liveVisitors.length} Live</span>
+        </div>
+      </header>
+
+      {/* Main Wrapper with Sidebar and Content */}
+      <div style={{ display: 'flex', flex: 1 }}>
+        {/* Mobile Backdrop Overlay */}
+        {isMobileNavOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.7)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 9000
+            }}
+            onClick={() => setIsMobileNavOpen(false)}
+          />
+        )}
+
+        {/* Admin Sidebar */}
+        <aside className={`admin-sidebar-desktop ${isMobileNavOpen ? 'open' : ''}`} style={{
+          background: '#0c0f16',
+          borderRight: '1px solid var(--border-subtle)',
+          justifyContent: 'space-between'
         }}>
           <div>
-            <h1 className="display-font" style={{ fontSize: '1.6rem', fontWeight: '800', color: '#fff' }}>
-              {navItems.find(n => n.id === activeTab)?.label || 'Dashboard Redaksi'}
-            </h1>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Panel Kontrol Pusat CALON JENAZAH
-            </span>
+            {/* Logo Brand Header */}
+            <div style={{
+              padding: '24px 20px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  background: 'var(--accent-crimson)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <ShieldAlert size={22} color="#fff" />
+                </div>
+                <div>
+                  <h2 className="brand-font" style={{ fontSize: '1.15rem', color: '#fff', letterSpacing: '1px', lineHeight: 1 }}>
+                    CALON <span style={{ color: 'var(--accent-crimson)' }}>JENAZAH</span>
+                  </h2>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Redaksi Administrator
+                  </span>
+                </div>
+              </div>
+
+              {/* Close button on mobile */}
+              <button
+                onClick={() => setIsMobileNavOpen(false)}
+                style={{ color: 'var(--text-muted)', display: 'none' }}
+                className="nav-mobile-toggle"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Navigation Links */}
+            <nav style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setIsMobileNavOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      fontSize: '0.85rem',
+                      fontWeight: isActive ? '700' : '500',
+                      background: isActive ? 'rgba(230,57,70,0.15)' : 'transparent',
+                      color: isActive ? '#fff' : 'var(--text-secondary)',
+                      border: '1px solid',
+                      borderColor: isActive ? 'rgba(230,57,70,0.3)' : 'transparent',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                        e.currentTarget.style.color = '#fff';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = 'var(--text-secondary)';
+                      }
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Icon size={18} color={isActive ? 'var(--accent-crimson)' : 'currentColor'} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {item.badge !== undefined && (
+                      <span style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        background: 'rgba(16,185,129,0.15)',
+                        color: '#34d399',
+                        border: '1px solid rgba(16,185,129,0.3)',
+                        fontSize: '0.7rem',
+                        fontWeight: '800',
+                        padding: '2px 8px',
+                        borderRadius: '12px'
+                      }}>
+                        <span className="pulsing-dot-green" style={{ width: '6px', height: '6px' }}></span>
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
 
-          {/* Live Visitor Indicator */}
+          {/* Sidebar Footer */}
+          <div style={{ padding: '16px 14px', borderTop: '1px solid var(--border-subtle)' }}>
+            <button
+              onClick={() => navigate('/')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                color: 'var(--text-secondary)',
+                marginBottom: '6px'
+              }}
+            >
+              <ExternalLink size={15} />
+              <span>Lihat Portal Berita</span>
+            </button>
+
+            <button
+              onClick={handleLogout}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                color: '#ef4444'
+              }}
+            >
+              <LogOut size={15} />
+              <span>Keluar Sesi</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Admin Content View */}
+        <main className="admin-content-area">
+          {/* Top bar with live status */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-subtle)',
-            padding: '8px 16px',
-            borderRadius: '50px'
+            justifyContent: 'space-between',
+            marginBottom: '24px',
+            borderBottom: '1px solid var(--border-subtle)',
+            paddingBottom: '14px',
+            flexWrap: 'wrap',
+            gap: '12px'
           }}>
-            <span className="pulsing-dot-green"></span>
-            <span style={{ fontSize: '0.82rem', color: '#fff' }}>
-              <strong>{liveVisitors.length}</strong> Pengunjung Sedang Aktif
-            </span>
-            <button
-              onClick={() => setActiveTab('live-tracking')}
-              style={{
-                fontSize: '0.72rem',
-                color: 'var(--accent-crimson)',
-                fontWeight: '700',
-                borderLeft: '1px solid rgba(255,255,255,0.1)',
-                paddingLeft: '10px'
-              }}
-            >
-              Lihat Radar →
-            </button>
-          </div>
-        </div>
+            <div>
+              <h1 className="display-font" style={{ fontSize: 'clamp(1.2rem, 3vw, 1.6rem)', fontWeight: '800', color: '#fff' }}>
+                {navItems.find(n => n.id === activeTab)?.label || 'Dashboard Redaksi'}
+              </h1>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Panel Kontrol Pusat CALON JENAZAH
+              </span>
+            </div>
 
-        {/* Injected Tab Content */}
-        {React.cloneElement(children, { liveVisitors, setActiveTab, navigate })}
-      </main>
+            {/* Live Visitor Indicator */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              padding: '6px 14px',
+              borderRadius: '50px'
+            }}>
+              <span className="pulsing-dot-green"></span>
+              <span style={{ fontSize: '0.78rem', color: '#fff' }}>
+                <strong>{liveVisitors.length}</strong> Pengunjung Aktif
+              </span>
+              <button
+                onClick={() => setActiveTab('live-tracking')}
+                style={{
+                  fontSize: '0.72rem',
+                  color: 'var(--accent-crimson)',
+                  fontWeight: '700',
+                  borderLeft: '1px solid rgba(255,255,255,0.1)',
+                  paddingLeft: '8px'
+                }}
+              >
+                Peta →
+              </button>
+            </div>
+          </div>
+
+          {/* Injected Tab Content */}
+          {React.cloneElement(children, { liveVisitors, setActiveTab, navigate })}
+        </main>
+      </div>
     </div>
   );
 }

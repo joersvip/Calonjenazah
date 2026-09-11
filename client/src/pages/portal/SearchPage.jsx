@@ -100,7 +100,7 @@ export default function SearchPage({ initialQuery = '', navigate }) {
           </div>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))',
             gap: '24px'
           }}>
             {results.map(art => (

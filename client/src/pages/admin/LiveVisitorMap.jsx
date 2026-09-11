@@ -132,10 +132,10 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
       </div>
 
       {/* Map + Side Details Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', height: '620px' }}>
+      <div className="live-map-grid">
         
         {/* Leaflet Interactive Map Container */}
-        <div style={{
+        <div className="live-map-container" style={{
           background: '#0d1117',
           borderRadius: 'var(--radius-md)',
           border: '1px solid var(--border-subtle)',
@@ -167,7 +167,7 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
         </div>
 
         {/* Real-Time Live Visitors Stream Card */}
-        <div style={{
+        <div className="live-map-sidebar" style={{
           background: 'var(--bg-card)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md)',

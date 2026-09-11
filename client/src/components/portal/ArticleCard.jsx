@@ -15,18 +15,9 @@ export default function ArticleCard({ article, navigate, layout = 'grid' }) {
   return (
     <article
       onClick={() => navigate(`/berita/${article.slug}`)}
+      className={`article-card-item ${isListLayout ? 'article-card-list' : 'article-card-grid'}`}
       style={{
-        display: 'flex',
-        flexDirection: isListLayout ? 'row' : 'column',
-        gap: '16px',
-        background: 'var(--bg-card)',
-        borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--border-subtle)',
-        overflow: 'hidden',
-        cursor: 'pointer',
-        transition: 'transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease',
-        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-        height: '100%'
+        gap: '16px'
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-4px)';
@@ -40,14 +31,7 @@ export default function ArticleCard({ article, navigate, layout = 'grid' }) {
       }}
     >
       {/* Thumbnail Container */}
-      <div style={{
-        position: 'relative',
-        width: isListLayout ? '240px' : '100%',
-        minWidth: isListLayout ? '240px' : 'auto',
-        height: isListLayout ? '160px' : '200px',
-        overflow: 'hidden',
-        backgroundColor: '#161922'
-      }}>
+      <div className={isListLayout ? 'article-card-thumb-list' : 'article-card-thumb-grid'}>
         <img
           src={article.image_url || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80'}
           alt={article.title}
@@ -92,7 +76,7 @@ export default function ArticleCard({ article, navigate, layout = 'grid' }) {
       </div>
 
       {/* Content Container */}
-      <div style={{ padding: isListLayout ? '12px 16px 12px 0' : '14px 18px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+      <div className={isListLayout ? 'article-card-content-list' : 'article-card-content-grid'}>
         <div>
           {/* Source Attribution Badge if re-uploaded */}
           {article.source_name && (

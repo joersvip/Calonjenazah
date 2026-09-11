@@ -149,7 +149,7 @@ export default function ReuploadNews({ navigate }) {
             <span>Tempel Tautan Berita Target (URL)</span>
           </label>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <input
               type="url"
               placeholder="Contoh: https://news.detik.com/berita/d-12345/judul-berita..."
@@ -157,7 +157,7 @@ export default function ReuploadNews({ navigate }) {
               onChange={(e) => setSourceUrl(e.target.value)}
               required
               style={{
-                flex: 1,
+                flex: '1 1 260px',
                 background: '#0a0d14',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '6px',
@@ -173,15 +173,17 @@ export default function ReuploadNews({ navigate }) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '8px',
                 background: 'var(--accent-crimson)',
                 color: '#fff',
-                padding: '0 24px',
+                padding: '12px 24px',
                 borderRadius: '6px',
                 fontWeight: '700',
                 fontSize: '0.9rem',
                 opacity: loading ? 0.7 : 1,
-                boxShadow: '0 4px 15px rgba(230,57,70,0.3)'
+                boxShadow: '0 4px 15px rgba(230,57,70,0.3)',
+                flex: '1 1 200px'
               }}
             >
               <DownloadCloud size={18} />
@@ -190,7 +192,7 @@ export default function ReuploadNews({ navigate }) {
           </div>
 
           {/* Quick preset links for demonstration */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
             <span>Uji Cepat Sumber:</span>
             {presetLinks.map((p, idx) => (
               <button
@@ -200,7 +202,7 @@ export default function ReuploadNews({ navigate }) {
                 style={{
                   background: 'rgba(255,255,255,0.06)',
                   color: 'var(--text-secondary)',
-                  padding: '3px 8px',
+                  padding: '4px 10px',
                   borderRadius: '4px',
                   border: '1px solid rgba(255,255,255,0.08)'
                 }}
@@ -310,7 +312,7 @@ export default function ReuploadNews({ navigate }) {
           </div>
 
           {/* Image & Preview */}
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
+          <div className="responsive-grid-preview">
             <div>
               <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: '600' }}>
                 URL Gambar Sampul (Featured Image)
@@ -329,7 +331,7 @@ export default function ReuploadNews({ navigate }) {
                 }}
               />
 
-              <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="responsive-grid-2" style={{ marginTop: '14px' }}>
                 <div>
                   <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: '600' }}>
                     Kategori Berita
@@ -448,7 +450,7 @@ export default function ReuploadNews({ navigate }) {
           </div>
 
           {/* Tags & Author */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="responsive-grid-2">
             <div>
               <label style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px', fontWeight: '600' }}>
                 Tagar Berita (Pisahkan dengan koma)
@@ -490,7 +492,7 @@ export default function ReuploadNews({ navigate }) {
           </div>
 
           {/* Toggles */}
-          <div style={{ display: 'flex', gap: '24px', padding: '10px 0' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', padding: '10px 0' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
               <input
                 type="checkbox"
