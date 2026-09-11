@@ -146,6 +146,16 @@ db.exec(`
     reply_to_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS admin_ips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip TEXT UNIQUE NOT NULL,
+    label TEXT,
+    admin_username TEXT,
+    source TEXT DEFAULT 'auto',
+    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Safe column migrations for existing databases
@@ -375,4 +385,109 @@ if (artCount.count === 0) {
   }
 }
 
+// --------------------------------------------------------------------------
+// Admin IP Exclusion Helpers (Peta Live & Riwayat Log)
+// --------------------------------------------------------------------------
+
+function cleanIp(ip) {
+  if (!ip) return '';
+  let clean = String(ip).trim();
+  if (clean === '::1') return '127.0.0.1';
+  if (clean.startsWith('::ffff:')) return clean.replace('::ffff:', '');
+  return clean;
+}
+
+db.cleanIp = cleanIp;
+
+db.registerAdminIp = function(ip, { username = 'admin', label = 'Sesi Admin', source = 'auto' } = {}) {
+  const target = cleanIp(ip);
+  if (!target || target === 'unknown') return null;
+  try {
+    const existing = db.prepare('SELECT id, label FROM admin_ips WHERE ip = ?').get(target);
+    if (existing) {
+      db.prepare(`
+        UPDATE admin_ips 
+        SET last_seen = CURRENT_TIMESTAMP, 
+            admin_username = COALESCE(?, admin_username),
+            label = COALESCE(?, label)
+        WHERE id = ?
+      `).run(username, label || existing.label, existing.id);
+      return existing.id;
+    } else {
+      const res = db.prepare(`
+        INSERT INTO admin_ips (ip, label, admin_username, source, last_seen)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(target, label || 'Perangkat Admin', username, source);
+      return res.lastInsertRowid;
+    }
+  } catch (err) {
+    console.error('Error registering admin IP:', err);
+    return null;
+  }
+};
+
+db.isExcludedAdminIp = function(ip) {
+  if (!ip) return false;
+  const target = cleanIp(ip);
+  if (target === '127.0.0.1' || target === '::1' || target === 'localhost') return true;
+  try {
+    const row = db.prepare('SELECT id FROM admin_ips WHERE ip = ?').get(target);
+    return Boolean(row);
+  } catch (err) {
+    return false;
+  }
+};
+
+db.getAdminIps = function() {
+  try {
+    return db.prepare('SELECT * FROM admin_ips ORDER BY last_seen DESC, created_at DESC').all();
+  } catch (err) {
+    return [];
+  }
+};
+
+db.removeAdminIp = function(idOrIp) {
+  try {
+    if (typeof idOrIp === 'number' || (!isNaN(Number(idOrIp)) && Number(idOrIp) > 0)) {
+      return db.prepare('DELETE FROM admin_ips WHERE id = ?').run(Number(idOrIp));
+    } else {
+      return db.prepare('DELETE FROM admin_ips WHERE ip = ?').run(cleanIp(idOrIp));
+    }
+  } catch (err) {
+    console.error('Error removing admin IP:', err);
+    return { changes: 0 };
+  }
+};
+
+db.purgeAdminVisitorLogs = function() {
+  try {
+    const res = db.prepare(`
+      DELETE FROM visitor_logs 
+      WHERE ip IN (SELECT ip FROM admin_ips)
+         OR ip IN ('127.0.0.1', '::1', 'localhost')
+    `).run();
+    return res.changes;
+  } catch (err) {
+    console.error('Error purging admin visitor logs:', err);
+    return 0;
+  }
+};
+
+// Seed default localhost admin IPs if not present
+try {
+  const seedIps = [
+    { ip: '127.0.0.1', label: 'Localhost / Akses Lokal Admin', source: 'default' },
+    { ip: '::1', label: 'IPv6 Localhost Admin', source: 'default' }
+  ];
+  for (const item of seedIps) {
+    const exist = db.prepare('SELECT id FROM admin_ips WHERE ip = ?').get(item.ip);
+    if (!exist) {
+      db.prepare('INSERT INTO admin_ips (ip, label, admin_username, source) VALUES (?, ?, ?, ?)').run(
+        item.ip, item.label, 'system', item.source
+      );
+    }
+  }
+} catch (e) {}
+
 module.exports = db;
+

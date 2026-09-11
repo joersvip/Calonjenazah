@@ -5,7 +5,7 @@ const { scrapeNewsFromUrl } = require('../services/scraper');
 const { crawlFeed, importCrawledArticle } = require('../services/crawler');
 const { 
   extractClientIp, resolveGeo, resolveGeoOnline, parseUserAgent, 
-  logVisit, getVisitorAnalytics, activeVisitors 
+  logVisit, getVisitorAnalytics, activeVisitors, getCleanActiveVisitors 
 } = require('../services/tracker');
 const { getSeoStatus, auditAndOptimizeSeo } = require('../services/seo');
 const { getAutoCrawlConfig, saveAutoCrawlConfig, runAutoCrawlJob } = require('../services/scheduler');
@@ -224,12 +224,29 @@ router.post('/analytics/track', (req, res) => {
   try {
     const clientIp = extractClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
+    const authHeader = req.headers['authorization'] || '';
+    const isAdmin = Boolean(req.body.isAdmin || authHeader.startsWith('Bearer auth_token_'));
+
     const { 
       pageUrl, pageTitle, articleId, referrer, sessionId, 
       screenResolution, durationSeconds,
       deviceBrand, deviceModel, cpuCores, ramGb, touchSupport,
-      pixelRatio, timezone, zipCode, connectionType, clientGeo
+      pixelRatio, timezone, zipCode, connectionType, clientGeo, publicIp
     } = req.body;
+
+    // Strictly exclude Admin IP or session
+    if (isAdmin || db.isExcludedAdminIp(clientIp) || (publicIp && db.isExcludedAdminIp(publicIp))) {
+      if (isAdmin) {
+        db.registerAdminIp(clientIp, { label: 'Admin Telemetry HTTP' });
+        if (publicIp) db.registerAdminIp(publicIp, { label: 'Admin Telemetry Public IP' });
+      }
+      return res.json({ 
+        success: true, 
+        excluded: true, 
+        message: 'IP Admin dikecualikan dari Peta Live dan Riwayat Pengunjung',
+        ip: clientIp 
+      });
+    }
 
     const logRecord = logVisit({
       ip: clientIp,
@@ -250,7 +267,8 @@ router.post('/analytics/track', (req, res) => {
       timezone,
       zipCode,
       connectionType,
-      clientGeo
+      clientGeo,
+      isAdmin
     });
 
     res.json({ success: true, data: logRecord });
@@ -285,6 +303,22 @@ router.post('/auth/login', (req, res) => {
     const admin = db.prepare("SELECT * FROM admins WHERE username = ? AND is_active = 1").get(username);
     if (admin && admin.password === password) {
       db.prepare("UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = ?").run(admin.id);
+      
+      // Automatically register admin client IP and public IP
+      const clientIp = extractClientIp(req);
+      db.registerAdminIp(clientIp, { 
+        username: admin.username, 
+        label: `Login Admin (${admin.display_name})`, 
+        source: 'login' 
+      });
+      if (req.body.publicIp) {
+        db.registerAdminIp(req.body.publicIp, { 
+          username: admin.username, 
+          label: `Login Admin Public IP (${admin.display_name})`, 
+          source: 'login' 
+        });
+      }
+
       return res.json({
         success: true,
         token: 'auth_token_' + Buffer.from(`${admin.username}:${admin.id}:${Date.now()}`).toString('base64'),
@@ -306,6 +340,20 @@ router.post('/auth/login', (req, res) => {
     const expectedPass = savedPass ? savedPass.value : 'admin123';
 
     if (username === expectedUser && password === expectedPass) {
+      const clientIp = extractClientIp(req);
+      db.registerAdminIp(clientIp, { 
+        username: expectedUser, 
+        label: 'Login Super Admin Default', 
+        source: 'login' 
+      });
+      if (req.body.publicIp) {
+        db.registerAdminIp(req.body.publicIp, { 
+          username: expectedUser, 
+          label: 'Login Super Admin Public IP', 
+          source: 'login' 
+        });
+      }
+
       return res.json({
         success: true,
         token: 'auth_token_' + Buffer.from(`${username}:1:${Date.now()}`).toString('base64'),
@@ -885,27 +933,34 @@ router.post('/seo/settings', (req, res) => {
 // 7. LIVE & HISTORICAL VISITOR ANALYTICS
 // ==========================================
 
-// Get currently active online visitors (Live map data)
+// Get currently active online visitors (Live map data - Admin IPs excluded)
 router.get('/analytics/live', (req, res) => {
   try {
-    const visitors = Array.from(activeVisitors.values());
+    const clientIp = extractClientIp(req);
+    const visitors = getCleanActiveVisitors ? getCleanActiveVisitors() : Array.from(activeVisitors.values()).filter(v => !db.isExcludedAdminIp(v.ip));
+    const adminIps = db.getAdminIps();
+
     res.json({
       success: true,
       activeCount: visitors.length,
-      visitors
+      visitors,
+      excludedAdminIpsCount: adminIps.length,
+      clientIp,
+      isClientAdmin: db.isExcludedAdminIp(clientIp)
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Get historical visitor logs with filter & pagination
+// Get historical visitor logs with filter & pagination (Admin IPs strictly excluded)
 router.get('/analytics/history', (req, res) => {
   try {
     const { search, country, device, page = 1, limit = 20 } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
 
-    let whereClause = 'WHERE 1=1';
+    // Strictly exclude all Admin IPs from history and audit log
+    let whereClause = "WHERE ip NOT IN (SELECT ip FROM admin_ips) AND ip NOT IN ('127.0.0.1', '::1', 'localhost')";
     const params = [];
 
     if (search) {
@@ -937,7 +992,8 @@ router.get('/analytics/history', (req, res) => {
       total,
       page: Number(page),
       totalPages: Math.ceil(total / Number(limit)),
-      logs
+      logs,
+      excludedAdminCount: db.getAdminIps().length
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -954,7 +1010,7 @@ router.get('/analytics/summary', (req, res) => {
   }
 });
 
-// Export visitor logs as CSV
+// Export visitor logs as CSV (Admin IPs excluded)
 router.get('/analytics/export-csv', (req, res) => {
   try {
     const logs = db.prepare(`
@@ -965,6 +1021,7 @@ router.get('/analytics/export-csv', (req, res) => {
              lac, tac, mcc_mnc, cell_id,
              page_title, page_url, referrer, duration_seconds, visited_at
       FROM visitor_logs 
+      WHERE ip NOT IN (SELECT ip FROM admin_ips) AND ip NOT IN ('127.0.0.1', '::1', 'localhost')
       ORDER BY visited_at DESC
     `).all();
 
@@ -1021,6 +1078,84 @@ router.get('/analytics/export-csv', (req, res) => {
     res.send(csvRows.join('\r\n'));
   } catch (error) {
     res.status(500).send('Error generating CSV: ' + error.message);
+  }
+});
+
+// ------------------------------------------
+// Admin IP Exclusion Management Endpoints
+// ------------------------------------------
+
+// Get excluded admin IPs & current client IP
+router.get('/analytics/admin-ips', (req, res) => {
+  try {
+    const clientIp = extractClientIp(req);
+    const adminIps = db.getAdminIps();
+    res.json({
+      success: true,
+      clientIp,
+      isClientExcluded: db.isExcludedAdminIp(clientIp),
+      adminIps
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add manual IP to exclusion list
+router.post('/analytics/admin-ips', (req, res) => {
+  try {
+    const { ip, label = 'Pengecualian Manual Admin', username = 'admin' } = req.body;
+    if (!ip) {
+      return res.status(400).json({ success: false, error: 'Alamat IP wajib diisi' });
+    }
+    const clean = db.cleanIp(ip);
+    const id = db.registerAdminIp(clean, { label, username, source: 'manual' });
+    
+    // Also remove from active visitors if currently connected
+    for (const [sId, v] of activeVisitors.entries()) {
+      if (db.cleanIp(v.ip) === clean || db.cleanIp(v.clientIp) === clean) {
+        activeVisitors.delete(sId);
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `IP ${clean} berhasil ditambahkan ke daftar pengecualian Admin`, 
+      id,
+      adminIps: db.getAdminIps()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Remove IP from exclusion list
+router.delete('/analytics/admin-ips/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = db.removeAdminIp(id);
+    res.json({ 
+      success: true, 
+      message: 'IP berhasil dihapus dari daftar pengecualian Admin', 
+      changes: result.changes,
+      adminIps: db.getAdminIps()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Purge existing visitor logs generated by Admin IPs
+router.post('/analytics/purge-admin-logs', (req, res) => {
+  try {
+    const deletedCount = db.purgeAdminVisitorLogs();
+    res.json({ 
+      success: true, 
+      message: `Berhasil membersihkan ${deletedCount} riwayat log yang berasal dari IP Admin.`,
+      deletedCount 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

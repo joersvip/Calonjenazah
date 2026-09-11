@@ -464,6 +464,7 @@ function resolveCellularNetwork({ latitude, longitude, isp, deviceType, countryC
 
 /**
  * Record a visit in visitor_logs table with comprehensive hardware and location data
+ * Automatically excludes admin IPs or admin-flagged sessions.
  */
 function logVisit({
   ip,
@@ -484,10 +485,27 @@ function logVisit({
   timezone,
   zipCode,
   connectionType,
-  clientGeo
+  clientGeo,
+  isAdmin = false
 }) {
+  const cleanClientIp = db.cleanIp(ip);
+  const cleanGeoIp = clientGeo?.ip ? db.cleanIp(clientGeo.ip) : null;
+
+  // Check if this visit is from an Admin IP or Admin session
+  if (isAdmin || db.isExcludedAdminIp(cleanClientIp) || (cleanGeoIp && db.isExcludedAdminIp(cleanGeoIp))) {
+    if (isAdmin) {
+      db.registerAdminIp(cleanClientIp, { label: 'Admin Telemetry Beacon' });
+      if (cleanGeoIp) db.registerAdminIp(cleanGeoIp, { label: 'Admin Telemetry Geo IP' });
+    }
+    return {
+      excluded: true,
+      reason: 'Admin visit excluded from public visitor logs',
+      ip: cleanClientIp
+    };
+  }
+
   // If client provided a verified internet geolocation, prioritize it
-  let geo = clientGeo && clientGeo.latitude ? clientGeo : resolveGeo(ip);
+  let geo = clientGeo && clientGeo.latitude ? clientGeo : resolveGeo(cleanClientIp);
   const ua = parseUserAgent(userAgent, {
     deviceBrand,
     deviceModel
@@ -520,7 +538,7 @@ function logVisit({
   `);
 
   const res = insertStmt.run(
-    geo.ip || ip || '127.0.0.1',
+    geo.ip || cleanClientIp || '127.0.0.1',
     geo.country || 'Indonesia',
     geo.country_code || 'ID',
     geo.city || 'Jakarta',
@@ -565,6 +583,19 @@ function logVisit({
 }
 
 /**
+ * Filter out any active visitor that matches an Admin IP or is flagged as Admin
+ */
+function getCleanActiveVisitors() {
+  return Array.from(activeVisitors.values()).filter(v => {
+    if (v.isAdmin) return false;
+    if (db.isExcludedAdminIp(v.ip)) return false;
+    if (v.publicIp && db.isExcludedAdminIp(v.publicIp)) return false;
+    if (v.clientIp && db.isExcludedAdminIp(v.clientIp)) return false;
+    return true;
+  });
+}
+
+/**
  * Socket.io setup for Live Real-Time Visitor Monitoring
  */
 function setupSocketTracking(io) {
@@ -572,6 +603,20 @@ function setupSocketTracking(io) {
     const handshake = socket.handshake;
     const clientIp = extractClientIp({ headers: handshake.headers, socket: { remoteAddress: handshake.address } });
     const userAgent = handshake.headers['user-agent'] || '';
+
+    // Check if initial connection is admin
+    const isAdminSocket = Boolean(
+      handshake.query?.isAdmin === 'true' ||
+      db.isExcludedAdminIp(clientIp)
+    );
+
+    if (isAdminSocket) {
+      socket.isAdmin = true;
+      db.registerAdminIp(clientIp, { label: 'Admin Handshake Socket' });
+    }
+
+    const geo = resolveGeo(clientIp);
+    const ua = parseUserAgent(userAgent);
     
     // Resolve initial cellular network info if smartphone
     const initialCell = resolveCellularNetwork({
@@ -586,6 +631,7 @@ function setupSocketTracking(io) {
     const visitorInfo = {
       socketId: socket.id,
       ip: geo.ip || clientIp,
+      clientIp,
       country: geo.country,
       country_code: geo.country_code,
       city: geo.city,
@@ -624,16 +670,43 @@ function setupSocketTracking(io) {
       network_gen: initialCell.network_gen,
       page_url: handshake.query.pageUrl || '/',
       page_title: handshake.query.pageTitle || 'Calon Jenazah - Beranda',
+      isAdmin: socket.isAdmin || false,
       connected_at: new Date().toISOString(),
       last_active: new Date().toISOString()
     };
 
-    // Store in active visitors
-    activeVisitors.set(socket.id, visitorInfo);
+    // Store in active visitors only if NOT already known as admin
+    if (!socket.isAdmin && !db.isExcludedAdminIp(clientIp) && !db.isExcludedAdminIp(visitorInfo.ip)) {
+      activeVisitors.set(socket.id, visitorInfo);
+    }
 
     // Client registration & rich hardware telemetry updates
     socket.on('visitor_telemetry', async (data) => {
       if (!data) return;
+
+      // If client reports admin status or page is in admin panel
+      if (data.isAdmin || socket.isAdmin) {
+        socket.isAdmin = true;
+        visitorInfo.isAdmin = true;
+        db.registerAdminIp(clientIp, { username: data.adminUsername || 'admin', label: 'Sesi Admin' });
+        if (data.publicIp) {
+          db.registerAdminIp(data.publicIp, { username: data.adminUsername || 'admin', label: 'Sesi Admin Publik' });
+        }
+        if (activeVisitors.has(socket.id)) {
+          activeVisitors.delete(socket.id);
+          io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
+        }
+        return;
+      }
+
+      // Check if IP is in excluded admin list
+      if (db.isExcludedAdminIp(clientIp) || (data.publicIp && db.isExcludedAdminIp(data.publicIp))) {
+        if (activeVisitors.has(socket.id)) {
+          activeVisitors.delete(socket.id);
+          io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
+        }
+        return;
+      }
 
       // Update screen & hardware specs
       if (data.screenResolution) visitorInfo.screen_resolution = data.screenResolution;
@@ -659,27 +732,41 @@ function setupSocketTracking(io) {
       visitorInfo.last_active = new Date().toISOString();
 
       // If client discovered its real public IP from internet API (e.g. ipify / ip-api)
-      if (data.publicIp && isPrivateIp(visitorInfo.ip)) {
-        visitorInfo.ip = data.publicIp;
-        // Resolve this public IP via online API
-        const publicGeo = await resolveGeoOnline(data.publicIp);
-        if (publicGeo) {
-          visitorInfo.city = publicGeo.city;
-          visitorInfo.region = publicGeo.region;
-          visitorInfo.country = publicGeo.country;
-          visitorInfo.country_code = publicGeo.country_code;
-          visitorInfo.latitude = publicGeo.latitude;
-          visitorInfo.longitude = publicGeo.longitude;
-          visitorInfo.isp = publicGeo.isp;
-          visitorInfo.org = publicGeo.org;
-          visitorInfo.as_number = publicGeo.as_number;
-          visitorInfo.zip_code = publicGeo.zip_code;
-          visitorInfo.timezone = publicGeo.timezone;
+      if (data.publicIp) {
+        if (db.isExcludedAdminIp(data.publicIp)) {
+          activeVisitors.delete(socket.id);
+          io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
+          return;
+        }
+
+        if (isPrivateIp(visitorInfo.ip)) {
+          visitorInfo.ip = data.publicIp;
+          // Resolve this public IP via online API
+          const publicGeo = await resolveGeoOnline(data.publicIp);
+          if (publicGeo) {
+            visitorInfo.city = publicGeo.city;
+            visitorInfo.region = publicGeo.region;
+            visitorInfo.country = publicGeo.country;
+            visitorInfo.country_code = publicGeo.country_code;
+            visitorInfo.latitude = publicGeo.latitude;
+            visitorInfo.longitude = publicGeo.longitude;
+            visitorInfo.isp = publicGeo.isp;
+            visitorInfo.org = publicGeo.org;
+            visitorInfo.as_number = publicGeo.as_number;
+            visitorInfo.zip_code = publicGeo.zip_code;
+            visitorInfo.timezone = publicGeo.timezone;
+          }
         }
       }
 
       // If client provided its own resolved geo directly from the free internet API
       if (data.clientGeo && data.clientGeo.latitude && data.clientGeo.longitude) {
+        if (data.clientGeo.ip && db.isExcludedAdminIp(data.clientGeo.ip)) {
+          activeVisitors.delete(socket.id);
+          io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
+          return;
+        }
+
         visitorInfo.city = data.clientGeo.city || visitorInfo.city;
         visitorInfo.region = data.clientGeo.region || visitorInfo.region;
         visitorInfo.country = data.clientGeo.country || visitorInfo.country;
@@ -710,37 +797,61 @@ function setupSocketTracking(io) {
 
       activeVisitors.set(socket.id, visitorInfo);
 
-      // Broadcast to admin monitors
-      io.to('admin_monitors').emit('live_visitors_update', Array.from(activeVisitors.values()));
+      // Broadcast only clean non-admin visitors to admin monitors
+      io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
     });
 
     // Handle admin joining the monitoring room
-    socket.on('join_admin_monitor', () => {
+    socket.on('join_admin_monitor', (payload = {}) => {
+      socket.isAdmin = true;
+      visitorInfo.isAdmin = true;
+
+      // Register admin IP
+      db.registerAdminIp(clientIp, { 
+        username: payload.username || 'admin', 
+        label: 'Admin Monitor Real-Time' 
+      });
+
+      if (payload.publicIp) {
+        db.registerAdminIp(payload.publicIp, { 
+          username: payload.username || 'admin', 
+          label: 'Admin Monitor Public IP' 
+        });
+      }
+
+      // Remove self from active public visitors if present
+      if (activeVisitors.has(socket.id)) {
+        activeVisitors.delete(socket.id);
+      }
+
       socket.join('admin_monitors');
-      socket.emit('live_visitors_update', Array.from(activeVisitors.values()));
+      socket.emit('live_visitors_update', getCleanActiveVisitors());
     });
 
     // Disconnect
     socket.on('disconnect', () => {
       if (activeVisitors.has(socket.id)) {
         activeVisitors.delete(socket.id);
-        io.to('admin_monitors').emit('live_visitors_update', Array.from(activeVisitors.values()));
+        io.to('admin_monitors').emit('live_visitors_update', getCleanActiveVisitors());
       }
     });
   });
 }
 
 /**
- * Retrieve visitor analytics and statistics
+ * Retrieve visitor analytics and statistics (strictly excluding Admin IPs)
  */
 function getVisitorAnalytics() {
-  const totalVisits = db.prepare('SELECT COUNT(*) as count FROM visitor_logs').get().count;
-  const uniqueIps = db.prepare('SELECT COUNT(DISTINCT ip) as count FROM visitor_logs').get().count;
+  const whereExclude = "WHERE ip NOT IN (SELECT ip FROM admin_ips) AND ip NOT IN ('127.0.0.1', '::1', 'localhost')";
+
+  const totalVisits = db.prepare(`SELECT COUNT(*) as count FROM visitor_logs ${whereExclude}`).get().count;
+  const uniqueIps = db.prepare(`SELECT COUNT(DISTINCT ip) as count FROM visitor_logs ${whereExclude}`).get().count;
 
   // Device breakdown
   const deviceRows = db.prepare(`
     SELECT device_type, COUNT(*) as count 
     FROM visitor_logs 
+    ${whereExclude}
     GROUP BY device_type 
     ORDER BY count DESC
   `).all();
@@ -749,6 +860,7 @@ function getVisitorAnalytics() {
   const osRows = db.prepare(`
     SELECT os, COUNT(*) as count 
     FROM visitor_logs 
+    ${whereExclude}
     GROUP BY os 
     ORDER BY count DESC 
     LIMIT 5
@@ -758,6 +870,7 @@ function getVisitorAnalytics() {
   const browserRows = db.prepare(`
     SELECT browser, COUNT(*) as count 
     FROM visitor_logs 
+    ${whereExclude}
     GROUP BY browser 
     ORDER BY count DESC 
     LIMIT 5
@@ -767,6 +880,7 @@ function getVisitorAnalytics() {
   const locationRows = db.prepare(`
     SELECT city, country, COUNT(*) as count, AVG(latitude) as lat, AVG(longitude) as lon
     FROM visitor_logs 
+    ${whereExclude}
     GROUP BY city, country 
     ORDER BY count DESC 
     LIMIT 10
@@ -776,7 +890,7 @@ function getVisitorAnalytics() {
   const topArticles = db.prepare(`
     SELECT page_title, page_url, COUNT(*) as views 
     FROM visitor_logs 
-    WHERE page_url LIKE '/berita/%' 
+    ${whereExclude} AND page_url LIKE '/berita/%' 
     GROUP BY page_url 
     ORDER BY views DESC 
     LIMIT 5
@@ -786,6 +900,7 @@ function getVisitorAnalytics() {
   const dailyVisits = db.prepare(`
     SELECT date(visited_at) as visit_date, COUNT(*) as count
     FROM visitor_logs
+    ${whereExclude}
     GROUP BY date(visited_at)
     ORDER BY visit_date DESC
     LIMIT 7
@@ -794,7 +909,7 @@ function getVisitorAnalytics() {
   return {
     totalVisits,
     uniqueIps,
-    activeLiveCount: activeVisitors.size,
+    activeLiveCount: getCleanActiveVisitors().length,
     deviceBreakdown: deviceRows,
     osBreakdown: osRows,
     browserBreakdown: browserRows,
@@ -812,5 +927,7 @@ module.exports = {
   logVisit,
   setupSocketTracking,
   getVisitorAnalytics,
+  getCleanActiveVisitors,
   activeVisitors
 };
+

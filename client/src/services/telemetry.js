@@ -177,6 +177,14 @@ export function reportNavigation(pageUrl, pageTitle, articleId = null) {
   const sock = getSocket();
   const specs = getClientDeviceSpecs();
 
+  const token = localStorage.getItem('calonjenazah_token');
+  const isAdmin = Boolean(token || window.location.hash.startsWith('#/admin'));
+  let adminUsername = 'admin';
+  try {
+    const adminUser = JSON.parse(localStorage.getItem('calonjenazah_admin_user') || '{}');
+    if (adminUser.username) adminUsername = adminUser.username;
+  } catch (e) {}
+
   const emitTelemetry = (clientGeo = null) => {
     const payload = {
       pageUrl,
@@ -185,6 +193,8 @@ export function reportNavigation(pageUrl, pageTitle, articleId = null) {
       referrer: document.referrer || 'Direct',
       sessionId: currentSessionId,
       durationSeconds: Math.floor((Date.now() - startTime) / 1000),
+      isAdmin,
+      adminUsername,
       ...specs
     };
 
@@ -197,9 +207,14 @@ export function reportNavigation(pageUrl, pageTitle, articleId = null) {
     sock.emit('visitor_telemetry', payload);
 
     // Also send HTTP beacon for persistent database logging
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     fetch('/api/analytics/track', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload)
     }).catch(() => {});
   };
@@ -217,13 +232,40 @@ export function reportNavigation(pageUrl, pageTitle, articleId = null) {
   }
 }
 
-// Subscribe to Live Visitors on Admin
+// Subscribe to Live Visitors on Admin (Exclude Admin IP from live monitor)
 export function subscribeAdminLive(callback) {
   const sock = getSocket();
-  sock.emit('join_admin_monitor');
+  const token = localStorage.getItem('calonjenazah_token');
+  let adminUsername = 'admin';
+  try {
+    const adminUser = JSON.parse(localStorage.getItem('calonjenazah_admin_user') || '{}');
+    if (adminUser.username) adminUsername = adminUser.username;
+  } catch (e) {}
+
+  const joinPayload = {
+    token,
+    username: adminUsername,
+    publicIp: cachedClientGeo?.ip || null
+  };
+
+  sock.emit('join_admin_monitor', joinPayload);
   sock.on('live_visitors_update', callback);
+
+  // If public IP resolves later, re-notify monitor room to ensure IP exclusion
+  if (!cachedClientGeo) {
+    fetchInternetLocation().then((geo) => {
+      if (geo && geo.ip) {
+        sock.emit('join_admin_monitor', {
+          token,
+          username: adminUsername,
+          publicIp: geo.ip
+        });
+      }
+    });
+  }
 
   return () => {
     sock.off('live_visitors_update', callback);
   };
 }
+

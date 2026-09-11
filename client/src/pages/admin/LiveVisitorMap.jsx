@@ -4,7 +4,7 @@ import {
   Radio, MapPin, Monitor, Smartphone, Tablet, 
   Globe, Shield, Clock, ExternalLink, RefreshCw, Users, Activity,
   Layers, Maximize2, Minimize2, Cpu, HardDrive, Wifi, Eye, X,
-  Compass, Info, CheckCircle2, ChevronRight
+  Compass, Info, CheckCircle2, ChevronRight, Trash2, Plus
 } from 'lucide-react';
 
 // Free Open-Source Map Tile Providers
@@ -48,6 +48,67 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
   const [activeLayerKey, setActiveLayerKey] = useState('carto_dark');
   const [selectedVisitor, setSelectedVisitor] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Admin IP Exclusion State
+  const [adminIpsData, setAdminIpsData] = useState({ clientIp: '', isClientExcluded: false, adminIps: [] });
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [newIpInput, setNewIpInput] = useState('');
+  const [newLabelInput, setNewLabelInput] = useState('');
+  const [ipActionMsg, setIpActionMsg] = useState('');
+
+  const fetchAdminIps = () => {
+    fetch('/api/analytics/admin-ips')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          setAdminIpsData({
+            clientIp: d.clientIp,
+            isClientExcluded: d.isClientExcluded,
+            adminIps: d.adminIps || []
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchAdminIps();
+  }, []);
+
+  const handleAddAdminIp = (ipToAdd, labelToAdd) => {
+    if (!ipToAdd || !ipToAdd.trim()) return;
+    setIpActionMsg('');
+
+    fetch('/api/analytics/admin-ips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: ipToAdd.trim(), label: labelToAdd || 'Pengecualian Admin Manual' })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setIpActionMsg(`IP ${ipToAdd} berhasil dikecualikan.`);
+          setNewIpInput('');
+          setNewLabelInput('');
+          fetchAdminIps();
+        } else {
+          setIpActionMsg(data.error || 'Gagal menambahkan IP');
+        }
+      })
+      .catch(() => setIpActionMsg('Gagal terhubung ke server'));
+  };
+
+  const handleRemoveAdminIp = (id) => {
+    fetch(`/api/analytics/admin-ips/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          fetchAdminIps();
+        }
+      })
+      .catch(() => {});
+  };
+
 
   // Initialize Leaflet Map with Open-Source Tile Layer
   useEffect(() => {
@@ -231,6 +292,28 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
 
         {/* Action Controls Toolbar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Admin IP Exclusion Badge & Action Button */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            style={{
+              background: 'rgba(230,57,70,0.12)',
+              border: '1px solid rgba(230,57,70,0.3)',
+              color: '#ff6b6b',
+              fontSize: '0.78rem',
+              fontWeight: '600',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+            title="Lihat dan Kelola IP Admin yang Dikecualikan dari Peta"
+          >
+            <Shield size={13} color="#e63946" />
+            <span>IP Admin Dikecualikan ({adminIpsData.adminIps.length})</span>
+          </button>
+
           {/* Layer Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Layers size={14} color="var(--text-muted)" />
@@ -300,6 +383,41 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Admin Exclusion Notice Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: 'rgba(16, 185, 129, 0.08)',
+        border: '1px solid rgba(16, 185, 129, 0.25)',
+        borderRadius: '6px',
+        padding: '8px 16px',
+        marginBottom: '16px',
+        fontSize: '0.8rem',
+        color: '#a7f3d0'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={15} color="#34d399" />
+          <span>
+            <strong>Perlindungan Integritas Data:</strong> IP Admin ({adminIpsData.clientIp ? <code style={{ color: '#6ee7b7' }}>{adminIpsData.clientIp}</code> : 'Sesi Internal/Localhost'}) secara otomatis <strong>dikecualikan</strong> dari peta radar agar tidak membiaskan data pengunjung riil.
+          </span>
+        </div>
+        <button 
+          onClick={() => setShowAdminModal(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#34d399',
+            fontSize: '0.76rem',
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            fontWeight: '600'
+          }}
+        >
+          Kelola IP ({adminIpsData.adminIps.length})
+        </button>
       </div>
 
       {/* Map + Side Stream Grid */}
@@ -921,6 +1039,302 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
         </div>
       )}
 
+      {/* MODAL: KELOLA PENGECUALIAN IP ADMIN */}
+      {showAdminModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#0d1117',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 22px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'var(--bg-surface)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Shield size={20} color="var(--accent-crimson)" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff', fontWeight: '700' }}>
+                    Kelola Pengecualian IP Admin
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Peta Live & Riwayat Log Pengunjung
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowAdminModal(false); setIpActionMsg(''); }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* Info banner */}
+              <div style={{
+                background: 'rgba(230,57,70,0.08)',
+                border: '1px solid rgba(230,57,70,0.2)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '0.8rem',
+                color: '#cbd5e1',
+                lineHeight: 1.5
+              }}>
+                ℹ️ <strong>Integritas Data:</strong> Semua kunjungan web dari IP berikut ini <strong>tidak akan dicatat</strong> di database Riwayat Kunjungan dan <strong>tidak akan ditampilkan</strong> di Radar Peta Live Pengunjung.
+              </div>
+
+              {/* Current IP Box */}
+              <div style={{
+                background: '#161b22',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px'
+              }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: '700' }}>
+                    IP Perangkat Anda Saat Ini
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                    <code style={{ fontSize: '0.95rem', color: '#6ee7b7', fontWeight: '700' }}>
+                      {adminIpsData.clientIp || '127.0.0.1'}
+                    </code>
+                    {adminIpsData.isClientExcluded ? (
+                      <span style={{ fontSize: '0.7rem', background: 'rgba(16,185,129,0.2)', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                        ✓ Dikecualikan
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', background: 'rgba(239,68,68,0.2)', color: '#f87171', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                        Belum Dikecualikan
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {!adminIpsData.isClientExcluded && adminIpsData.clientIp && (
+                  <button
+                    onClick={() => handleAddAdminIp(adminIpsData.clientIp, 'Perangkat Admin Utama')}
+                    style={{
+                      background: 'var(--accent-crimson)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 14px',
+                      fontSize: '0.78rem',
+                      fontWeight: '700',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={14} /> Kecualikan IP Ini
+                  </button>
+                )}
+              </div>
+
+              {/* Add Custom IP Form */}
+              <div style={{
+                background: '#161b22',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px'
+              }}>
+                <span style={{ fontSize: '0.8rem', color: '#fff', fontWeight: '700', display: 'block', marginBottom: '10px' }}>
+                  + Tambah IP Admin / Kantor Secara Manual
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 180.251.145.116 atau 192.168.1.100"
+                    value={newIpInput}
+                    onChange={(e) => setNewIpInput(e.target.value)}
+                    style={{
+                      flex: 2,
+                      minWidth: '180px',
+                      background: '#0d1017',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      color: '#fff'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Label (misal: WiFi Kantor Redaksi)"
+                    value={newLabelInput}
+                    onChange={(e) => setNewLabelInput(e.target.value)}
+                    style={{
+                      flex: 2,
+                      minWidth: '180px',
+                      background: '#0d1017',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      color: '#fff'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleAddAdminIp(newIpInput, newLabelInput)}
+                    style={{
+                      background: 'var(--accent-crimson)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Plus size={14} /> Tambah
+                  </button>
+                </div>
+
+                {ipActionMsg && (
+                  <p style={{ margin: '8px 0 0 0', fontSize: '0.78rem', color: '#34d399', fontWeight: '600' }}>
+                    {ipActionMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* List of Registered Admin IPs */}
+              <div>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: '700', display: 'block', marginBottom: '10px' }}>
+                  Daftar IP Admin yang Dikecualikan ({adminIpsData.adminIps.length})
+                </span>
+                <div style={{
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  background: '#0d1017'
+                }}>
+                  <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                    {adminIpsData.adminIps.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        Belum ada IP yang dikecualikan.
+                      </div>
+                    ) : (
+                      adminIpsData.adminIps.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            fontSize: '0.8rem'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <code style={{ color: '#ff6b6b', fontWeight: '700' }}>{item.ip}</code>
+                              <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.76rem' }}>
+                                {item.label || 'Admin Device'}
+                              </span>
+                            </div>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                              Username: {item.admin_username || 'system'} • Sumber: {item.source || 'auto'}
+                            </span>
+                          </div>
+
+                          {/* Delete button (cannot delete 127.0.0.1 default localhost) */}
+                          {item.ip !== '127.0.0.1' && item.ip !== '::1' && (
+                            <button
+                              onClick={() => handleRemoveAdminIp(item.id)}
+                              style={{
+                                background: 'rgba(239,68,68,0.1)',
+                                border: '1px solid rgba(239,68,68,0.3)',
+                                color: '#f87171',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.72rem'
+                              }}
+                              title="Hapus IP dari daftar pengecualian"
+                            >
+                              <Trash2 size={12} /> Hapus
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: 'var(--bg-surface)'
+            }}>
+              <button
+                onClick={() => { setShowAdminModal(false); setIpActionMsg(''); }}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#fff',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

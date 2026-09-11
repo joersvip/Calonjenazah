@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   History, Search, Download, Filter, MapPin, 
   Monitor, Smartphone, Tablet, Clock, RefreshCw, ChevronLeft, ChevronRight,
-  Eye, X, Globe, ExternalLink, Cpu, HardDrive, Radio
+  Eye, X, Globe, ExternalLink, Cpu, HardDrive, Radio,
+  Shield, Trash2, Plus, CheckCircle2
 } from 'lucide-react';
 
 export default function VisitorHistory() {
@@ -14,6 +15,87 @@ export default function VisitorHistory() {
   const [deviceFilter, setDeviceFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState(null);
+
+  // Admin IP Exclusion State
+  const [adminIpsData, setAdminIpsData] = useState({ clientIp: '', isClientExcluded: false, adminIps: [] });
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [newIpInput, setNewIpInput] = useState('');
+  const [newLabelInput, setNewLabelInput] = useState('');
+  const [ipActionMsg, setIpActionMsg] = useState('');
+  const [isPurging, setIsPurging] = useState(false);
+
+  const fetchAdminIps = () => {
+    fetch('/api/analytics/admin-ips')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          setAdminIpsData({
+            clientIp: d.clientIp,
+            isClientExcluded: d.isClientExcluded,
+            adminIps: d.adminIps || []
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleAddAdminIp = (ipToAdd, labelToAdd) => {
+    if (!ipToAdd || !ipToAdd.trim()) return;
+    setIpActionMsg('');
+
+    fetch('/api/analytics/admin-ips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: ipToAdd.trim(), label: labelToAdd || 'Pengecualian Admin Manual' })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setIpActionMsg(`IP ${ipToAdd} berhasil dikecualikan.`);
+          setNewIpInput('');
+          setNewLabelInput('');
+          fetchAdminIps();
+          fetchLogs(1);
+        } else {
+          setIpActionMsg(data.error || 'Gagal menambahkan IP');
+        }
+      })
+      .catch(() => setIpActionMsg('Gagal terhubung ke server'));
+  };
+
+  const handleRemoveAdminIp = (id) => {
+    fetch(`/api/analytics/admin-ips/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          fetchAdminIps();
+          fetchLogs(1);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handlePurgeLogs = () => {
+    if (!window.confirm('Yakin ingin membersihkan semua riwayat log kunjungan yang berasal dari IP Admin?')) return;
+    setIsPurging(true);
+    setIpActionMsg('');
+
+    fetch('/api/analytics/purge-admin-logs', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        setIsPurging(false);
+        if (data.success) {
+          setIpActionMsg(data.message);
+          fetchLogs(1);
+        } else {
+          setIpActionMsg('Gagal membersihkan log');
+        }
+      })
+      .catch(() => {
+        setIsPurging(false);
+        setIpActionMsg('Gagal terhubung ke server');
+      });
+  };
 
   const fetchLogs = (p = 1) => {
     setLoading(true);
@@ -37,6 +119,7 @@ export default function VisitorHistory() {
 
   useEffect(() => {
     fetchLogs(1);
+    fetchAdminIps();
   }, [deviceFilter]);
 
   const handleSearchSubmit = (e) => {
@@ -47,6 +130,7 @@ export default function VisitorHistory() {
   const handleExportCsv = () => {
     window.location.href = '/api/analytics/export-csv';
   };
+
 
   return (
     <div>
@@ -105,7 +189,29 @@ export default function VisitorHistory() {
         </form>
 
         {/* Right Side: Device Filter & CSV Export */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          {/* Admin Exclusion Button */}
+          <button
+            onClick={() => setShowAdminModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(230,57,70,0.12)',
+              color: '#ff6b6b',
+              border: '1px solid rgba(230,57,70,0.3)',
+              borderRadius: '6px',
+              padding: '7px 12px',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+            title="Kelola Daftar IP Admin yang Dikecualikan dari Riwayat"
+          >
+            <Shield size={14} color="#e63946" />
+            <span>IP Admin Dikecualikan ({adminIpsData.adminIps.length})</span>
+          </button>
+
           {/* Device Type Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Filter size={14} color="var(--text-muted)" />
@@ -151,6 +257,41 @@ export default function VisitorHistory() {
             <span>Ekspor CSV</span>
           </button>
         </div>
+      </div>
+
+      {/* Admin Exclusion Notice Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: 'rgba(16, 185, 129, 0.08)',
+        border: '1px solid rgba(16, 185, 129, 0.25)',
+        borderRadius: '6px',
+        padding: '10px 16px',
+        marginBottom: '16px',
+        fontSize: '0.8rem',
+        color: '#a7f3d0'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={16} color="#34d399" />
+          <span>
+            <strong>Integritas Audit Terjamin:</strong> Seluruh riwayat kunjungan dari IP Admin ({adminIpsData.clientIp ? <code style={{ color: '#6ee7b7' }}>{adminIpsData.clientIp}</code> : 'Localhost/Internal'}) otomatis <strong>dikecualikan</strong> agar data analitik portal berita 100% murni dari pembaca publik.
+          </span>
+        </div>
+        <button 
+          onClick={() => setShowAdminModal(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#34d399',
+            fontSize: '0.78rem',
+            textDecoration: 'underline',
+            cursor: 'pointer',
+            fontWeight: '600'
+          }}
+        >
+          Kelola IP ({adminIpsData.adminIps.length})
+        </button>
       </div>
 
       {/* Visitor Logs Data Table */}
@@ -592,6 +733,339 @@ export default function VisitorHistory() {
                 }}
               >
                 Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KELOLA PENGECUALIAN IP ADMIN */}
+      {showAdminModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 100000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#0d1117',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 22px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'var(--bg-surface)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Shield size={20} color="var(--accent-crimson)" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff', fontWeight: '700' }}>
+                    Kelola Pengecualian IP Admin
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Integritas Riwayat Kunjungan & Audit Log
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowAdminModal(false); setIpActionMsg(''); }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* Info banner */}
+              <div style={{
+                background: 'rgba(230,57,70,0.08)',
+                border: '1px solid rgba(230,57,70,0.2)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '0.8rem',
+                color: '#cbd5e1',
+                lineHeight: 1.5
+              }}>
+                ℹ️ <strong>Integritas Audit:</strong> IP yang terdaftar di bawah ini secara ketat <strong>dikecualikan</strong> dari seluruh penghitungan analitik, riwayat kunjungan, dan ekspor CSV.
+              </div>
+
+              {/* Current IP Box */}
+              <div style={{
+                background: '#161b22',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px'
+              }}>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', fontWeight: '700' }}>
+                    IP Perangkat Anda Saat Ini
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
+                    <code style={{ fontSize: '0.95rem', color: '#6ee7b7', fontWeight: '700' }}>
+                      {adminIpsData.clientIp || '127.0.0.1'}
+                    </code>
+                    {adminIpsData.isClientExcluded ? (
+                      <span style={{ fontSize: '0.7rem', background: 'rgba(16,185,129,0.2)', color: '#34d399', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                        ✓ Dikecualikan
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', background: 'rgba(239,68,68,0.2)', color: '#f87171', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                        Belum Dikecualikan
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {!adminIpsData.isClientExcluded && adminIpsData.clientIp && (
+                  <button
+                    onClick={() => handleAddAdminIp(adminIpsData.clientIp, 'Perangkat Admin Utama')}
+                    style={{
+                      background: 'var(--accent-crimson)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 14px',
+                      fontSize: '0.78rem',
+                      fontWeight: '700',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={14} /> Kecualikan IP Ini
+                  </button>
+                )}
+              </div>
+
+              {/* Add Custom IP Form */}
+              <div style={{
+                background: '#161b22',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px'
+              }}>
+                <span style={{ fontSize: '0.8rem', color: '#fff', fontWeight: '700', display: 'block', marginBottom: '10px' }}>
+                  + Tambah IP Admin / Kantor Secara Manual
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Contoh: 180.251.145.116 atau 192.168.1.100"
+                    value={newIpInput}
+                    onChange={(e) => setNewIpInput(e.target.value)}
+                    style={{
+                      flex: 2,
+                      minWidth: '180px',
+                      background: '#0d1017',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      color: '#fff'
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Label (misal: Redaksi Gedung A)"
+                    value={newLabelInput}
+                    onChange={(e) => setNewLabelInput(e.target.value)}
+                    style={{
+                      flex: 2,
+                      minWidth: '180px',
+                      background: '#0d1017',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      color: '#fff'
+                    }}
+                  />
+                  <button
+                    onClick={() => handleAddAdminIp(newIpInput, newLabelInput)}
+                    style={{
+                      background: 'var(--accent-crimson)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Plus size={14} /> Tambah
+                  </button>
+                </div>
+
+                {ipActionMsg && (
+                  <p style={{ margin: '8px 0 0 0', fontSize: '0.78rem', color: '#34d399', fontWeight: '600' }}>
+                    {ipActionMsg}
+                  </p>
+                )}
+              </div>
+
+              {/* List of Registered Admin IPs */}
+              <div>
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: '700', display: 'block', marginBottom: '10px' }}>
+                  Daftar IP Admin yang Dikecualikan ({adminIpsData.adminIps.length})
+                </span>
+                <div style={{
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  background: '#0d1017'
+                }}>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {adminIpsData.adminIps.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        Belum ada IP yang dikecualikan.
+                      </div>
+                    ) : (
+                      adminIpsData.adminIps.map((item) => (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '10px 14px',
+                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            fontSize: '0.8rem'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <code style={{ color: '#ff6b6b', fontWeight: '700' }}>{item.ip}</code>
+                              <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.76rem' }}>
+                                {item.label || 'Admin Device'}
+                              </span>
+                            </div>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                              Username: {item.admin_username || 'system'} • Sumber: {item.source || 'auto'}
+                            </span>
+                          </div>
+
+                          {/* Delete button (cannot delete 127.0.0.1 default localhost) */}
+                          {item.ip !== '127.0.0.1' && item.ip !== '::1' && (
+                            <button
+                              onClick={() => handleRemoveAdminIp(item.id)}
+                              style={{
+                                background: 'rgba(239,68,68,0.1)',
+                                border: '1px solid rgba(239,68,68,0.3)',
+                                color: '#f87171',
+                                borderRadius: '4px',
+                                padding: '4px 8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.72rem'
+                              }}
+                              title="Hapus IP dari daftar pengecualian"
+                            >
+                              <Trash2 size={12} /> Hapus
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Purge Admin Logs Section */}
+              <div style={{
+                background: 'rgba(212,175,55,0.08)',
+                border: '1px solid rgba(212,175,55,0.25)',
+                borderRadius: '8px',
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <div>
+                  <h4 style={{ color: 'var(--accent-gold)', margin: '0 0 4px 0', fontSize: '0.85rem' }}>
+                    🧹 Bersihkan Riwayat Lama dari IP Admin
+                  </h4>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.75rem', lineHeight: 1.4 }}>
+                    Hapus secara permanen semua data kunjungan historis di database yang tercatat dari IP Admin.
+                  </p>
+                </div>
+                <button
+                  onClick={handlePurgeLogs}
+                  disabled={isPurging}
+                  style={{
+                    background: 'rgba(212,175,55,0.18)',
+                    color: 'var(--accent-gold)',
+                    border: '1px solid var(--accent-gold)',
+                    borderRadius: '6px',
+                    padding: '8px 14px',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: isPurging ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isPurging ? 'Membersihkan...' : 'Bersihkan Log Admin Sekarang'}
+                </button>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: 'var(--bg-surface)'
+            }}>
+              <button
+                onClick={() => { setShowAdminModal(false); setIpActionMsg(''); }}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#fff',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '0.82rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Selesai
               </button>
             </div>
           </div>
