@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Radio, History, Link, Cpu, 
   FileText, Settings, ExternalLink, LogOut, ShieldAlert,
-  Users, MapPin, Menu, X, Lock
+  Users, MapPin, Menu, X, Lock, Sparkles
 } from 'lucide-react';
 import { subscribeAdminLive } from '../../services/telemetry';
 
@@ -99,29 +99,34 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
 
           {loginError && (
             <div style={{
-              background: 'rgba(230,57,70,0.15)',
+              background: 'rgba(230, 57, 70, 0.15)',
               border: '1px solid var(--accent-crimson)',
-              color: '#ff858d',
-              padding: '10px',
               borderRadius: '6px',
-              fontSize: '0.82rem',
-              marginBottom: '18px'
+              padding: '10px 14px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: '#ff858d',
+              fontSize: '0.85rem'
             }}>
-              {loginError}
+              <ShieldAlert size={16} />
+              <span>{loginError}</span>
             </div>
           )}
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left' }}>
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
             <div>
-              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                Nama Pengguna
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                Username
               </label>
               <input
                 type="text"
-                placeholder="Masukkan nama pengguna..."
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                placeholder="Masukkan username..."
+                autoComplete="off"
                 style={{
                   width: '100%',
                   background: '#0a0d14',
@@ -135,15 +140,16 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
             </div>
 
             <div>
-              <label style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                Kata Sandi
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                Password
               </label>
               <input
                 type="password"
-                placeholder="Masukkan kata sandi..."
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="Masukkan password..."
+                autoComplete="new-password"
                 style={{
                   width: '100%',
                   background: '#0a0d14',
@@ -197,6 +203,7 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
     { id: 'reupload', label: 'Re-Upload via Link', icon: Link, highlight: true },
     { id: 'crawler', label: 'Web Crawler & RSS', icon: Cpu },
     { id: 'articles', label: 'Manajemen Berita', icon: FileText },
+    { id: 'seo', label: 'Optimasi SEO Otomatis', icon: Sparkles },
     { id: 'settings', label: 'Pengaturan Web', icon: Settings }
   ];
 

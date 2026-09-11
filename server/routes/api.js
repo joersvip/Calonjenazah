@@ -4,6 +4,8 @@ const db = require('../db');
 const { scrapeNewsFromUrl } = require('../services/scraper');
 const { crawlFeed, importCrawledArticle } = require('../services/crawler');
 const { extractClientIp, resolveGeo, parseUserAgent, logVisit, getVisitorAnalytics, activeVisitors } = require('../services/tracker');
+const { getSeoStatus, auditAndOptimizeSeo } = require('../services/seo');
+const { getAutoCrawlConfig, saveAutoCrawlConfig, runAutoCrawlJob } = require('../services/scheduler');
 
 // ==========================================
 // 1. PUBLIC ARTICLES & CONTENT ROUTES
@@ -589,6 +591,82 @@ router.put('/crawler/articles/batch-category', (req, res) => {
       category_id: cat.id,
       category_name: cat.name
     });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// AUTO CRAWL SCHEDULER ROUTES
+// ==========================================
+
+// Get auto-crawl scheduler config & live status
+router.get('/crawler/scheduler', (req, res) => {
+  try {
+    const config = getAutoCrawlConfig();
+    res.json({ success: true, config });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Save auto-crawl scheduler configuration
+router.post('/crawler/scheduler', (req, res) => {
+  try {
+    saveAutoCrawlConfig(req.body);
+    const updated = getAutoCrawlConfig();
+    res.json({ success: true, message: 'Jadwal & pengaturan auto-crawl berhasil diperbarui', config: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Trigger auto-crawl run immediately
+router.post('/crawler/scheduler/run-now', async (req, res) => {
+  try {
+    const result = await runAutoCrawlJob(true);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// AUTOMATED PERIODIC SEO OPTIMIZATION ROUTES
+// ==========================================
+
+// Get SEO health status, score, and audit report
+router.get('/seo/status', (req, res) => {
+  try {
+    const status = getSeoStatus();
+    res.json({ success: true, status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Trigger immediate SEO optimization
+router.post('/seo/optimize-now', (req, res) => {
+  try {
+    const report = auditAndOptimizeSeo();
+    res.json({ 
+      success: true, 
+      report, 
+      message: `Optimasi SEO berhasil dieksekusi. Skor kesehatan SEO: ${report.score}/100, ${report.optimizedCount} artikel dioptimasi.` 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update periodic SEO automation settings
+router.post('/seo/settings', (req, res) => {
+  try {
+    const { enabled, intervalHours } = req.body;
+    const save = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+    if (enabled !== undefined) save.run('seo_auto_enabled', String(enabled));
+    if (intervalHours !== undefined) save.run('seo_interval_hours', String(intervalHours));
+    res.json({ success: true, message: 'Pengaturan optimasi SEO berkala berhasil disimpan' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

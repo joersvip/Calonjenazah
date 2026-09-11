@@ -6,6 +6,8 @@ const cors = require('cors');
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const { setupSocketTracking } = require('./services/tracker');
+const { initScheduler } = require('./services/scheduler');
+const { generateSitemapXml, generateRobotsTxt, generateRssFeed } = require('./services/seo');
 const db = require('./db');
 
 const app = express();
@@ -30,6 +32,9 @@ app.set('trust proxy', true);
 // Initialize Socket.io tracking
 setupSocketTracking(io);
 
+// Initialize Background Automation Scheduler (Auto-Crawl & Periodic SEO)
+initScheduler();
+
 // Mount API routes
 app.use('/api', apiRoutes);
 
@@ -41,6 +46,49 @@ app.get('/api/health', (req, res) => {
     environment: process.env.NODE_ENV || 'production',
     timestamp: new Date().toISOString()
   });
+});
+
+// ==========================================
+// PUBLIC SEARCH ENGINE & RSS FEEDS (SEO)
+// ==========================================
+
+// Dynamic XML Sitemap
+app.get('/sitemap.xml', (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    const baseUrl = `${protocol}://${host}`;
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.send(generateSitemapXml(baseUrl));
+  } catch (err) {
+    res.status(500).send('Error generating sitemap: ' + err.message);
+  }
+});
+
+// Dynamic Robots.txt
+app.get('/robots.txt', (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    const baseUrl = `${protocol}://${host}`;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(generateRobotsTxt(baseUrl));
+  } catch (err) {
+    res.status(500).send('Error generating robots.txt: ' + err.message);
+  }
+});
+
+// Dynamic RSS & Atom Feed for Google News
+app.get(['/rss.xml', '/feed.xml'], (req, res) => {
+  try {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || 'localhost:5000';
+    const baseUrl = `${protocol}://${host}`;
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.send(generateRssFeed(baseUrl));
+  } catch (err) {
+    res.status(500).send('Error generating RSS feed: ' + err.message);
+  }
 });
 
 // Serve frontend with optimal caching in production

@@ -14,6 +14,7 @@ import ReuploadNews from './pages/admin/ReuploadNews';
 import CrawlerStudio from './pages/admin/CrawlerStudio';
 import ArticleManagement from './pages/admin/ArticleManagement';
 import SiteSettings from './pages/admin/SiteSettings';
+import SeoOptimization from './pages/admin/SeoOptimization';
 
 import { reportNavigation } from './services/telemetry';
 
@@ -70,6 +71,7 @@ export default function App() {
         case 'reupload': return <ReuploadNews />;
         case 'crawler': return <CrawlerStudio />;
         case 'articles': return <ArticleManagement />;
+        case 'seo': return <SeoOptimization navigate={navigate} />;
         case 'settings': return <SiteSettings />;
         default: return <DashboardOverview />;
       }

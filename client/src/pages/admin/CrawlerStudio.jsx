@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Cpu, Play, Download, CheckCircle2, Clock, 
   ExternalLink, Eye, AlertCircle, Sparkles, Filter, CheckSquare, Square,
-  RefreshCw, Layers
+  RefreshCw, Layers, Zap, Check, Calendar, Sliders
 } from 'lucide-react';
 
 const CATEGORY_OPTIONS = [
@@ -22,6 +22,26 @@ export default function CrawlerStudio({ navigate }) {
   const [customName, setCustomName] = useState('');
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlResult, setCrawlResult] = useState(null);
+
+  // Sub-tab: manual crawl vs automated scheduler
+  const [activeSubTab, setActiveSubTab] = useState('manual'); // 'manual' | 'scheduler'
+  const [autoCrawlConfig, setAutoCrawlConfig] = useState({
+    enabled: false,
+    mode: 'interval',
+    intervalMinutes: 60,
+    dailyTimes: '06:00,12:00,18:00',
+    action: 'queue',
+    sources: 'all',
+    maxPerSource: 10,
+    lastRun: null,
+    lastResult: 'Belum pernah dijalankan',
+    nextRun: null,
+    isRunning: false
+  });
+  const [savingScheduler, setSavingScheduler] = useState(false);
+  const [schedulerSaveSuccess, setSchedulerSaveSuccess] = useState(false);
+  const [triggeringAutoCrawl, setTriggeringAutoCrawl] = useState(false);
+  const [autoCrawlMessage, setAutoCrawlMessage] = useState('');
 
   const [sourceSearch, setSourceSearch] = useState('');
   const [sourceFilterTag, setSourceFilterTag] = useState('all');
@@ -56,6 +76,60 @@ export default function CrawlerStudio({ navigate }) {
         }
       })
       .catch(() => {});
+
+    fetch('/api/crawler/scheduler')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.config) {
+          setAutoCrawlConfig(data.config);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleSaveScheduler = (e) => {
+    e.preventDefault();
+    setSavingScheduler(true);
+    fetch('/api/crawler/scheduler', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(autoCrawlConfig)
+    })
+      .then(res => res.json())
+      .then(data => {
+        setSavingScheduler(false);
+        if (data.success) {
+          setSchedulerSaveSuccess(true);
+          if (data.config) setAutoCrawlConfig(data.config);
+          setTimeout(() => setSchedulerSaveSuccess(false), 3500);
+        } else {
+          alert('Gagal menyimpan jadwal: ' + data.error);
+        }
+      })
+      .catch(() => {
+        setSavingScheduler(false);
+        alert('Terjadi kesalahan jaringan saat menyimpan jadwal');
+      });
+  };
+
+  const handleRunAutoCrawlNow = () => {
+    setTriggeringAutoCrawl(true);
+    setAutoCrawlMessage('');
+    fetch('/api/crawler/scheduler/run-now', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        setTriggeringAutoCrawl(false);
+        if (data.success) {
+          setAutoCrawlMessage(data.summary || `Berhasil merayapi ${data.totalFetched} berita baru.`);
+          loadData();
+        } else {
+          alert('Auto crawl gagal: ' + (data.error || data.message));
+        }
+      })
+      .catch(() => {
+        setTriggeringAutoCrawl(false);
+        alert('Terjadi kesalahan jaringan saat memicu auto-crawl');
+      });
   };
 
   useEffect(() => {
@@ -245,7 +319,497 @@ export default function CrawlerStudio({ navigate }) {
         </p>
       </div>
 
-      {/* Crawl Control Center */}
+      {/* Sub-tab Navigation */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px', flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setActiveSubTab('manual')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '6px',
+            fontSize: '0.86rem',
+            fontWeight: '700',
+            background: activeSubTab === 'manual' ? 'var(--accent-crimson)' : 'var(--bg-surface)',
+            color: '#fff',
+            border: '1px solid',
+            borderColor: activeSubTab === 'manual' ? 'var(--accent-crimson)' : 'var(--border-subtle)',
+            cursor: 'pointer'
+          }}
+        >
+          <Cpu size={16} />
+          <span>Manual Crawl &amp; Koleksi 18 Sumber</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('scheduler')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 18px',
+            borderRadius: '6px',
+            fontSize: '0.86rem',
+            fontWeight: '700',
+            background: activeSubTab === 'scheduler' ? 'linear-gradient(135deg, #7b2cbf, #5a189a)' : 'var(--bg-surface)',
+            color: '#fff',
+            border: '1px solid',
+            borderColor: activeSubTab === 'scheduler' ? '#9d4edd' : 'var(--border-subtle)',
+            cursor: 'pointer'
+          }}
+        >
+          <Clock size={16} />
+          <span>Jadwal Auto-Crawl (Setting Waktu Manual)</span>
+          {autoCrawlConfig.enabled ? (
+            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#10b981', color: '#fff', borderRadius: '10px', fontWeight: '800' }}>
+              ● AKTIF
+            </span>
+          ) : (
+            <span style={{ fontSize: '0.68rem', padding: '2px 8px', background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)', borderRadius: '10px' }}>
+              OFF
+            </span>
+          )}
+        </button>
+      </div>
+
+      {autoCrawlMessage && (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid #10b981',
+          borderRadius: '8px',
+          padding: '12px 18px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          color: '#34d399',
+          fontSize: '0.88rem'
+        }}>
+          <CheckCircle2 size={18} />
+          <span>{autoCrawlMessage}</span>
+        </div>
+      )}
+
+      {/* TAB 2: AUTOMATED CRAWLER SCHEDULER PANEL */}
+      {activeSubTab === 'scheduler' && (
+        <div style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid rgba(157,78,221,0.3)',
+          borderRadius: 'var(--radius-md)',
+          padding: '26px',
+          marginBottom: '30px',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.3)'
+        }}>
+          {/* Header & Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={20} color="#c77dff" />
+                <h3 className="display-font" style={{ fontSize: '1.2rem', fontWeight: '800', color: '#fff' }}>
+                  Pengaturan Jadwal Auto-Crawl
+                </h3>
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Atur waktu manual (interval menit/jam atau jam tertentu setiap hari) agar server merayapi 18 sumber berita secara otomatis di latar belakang.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={handleRunAutoCrawlNow}
+                disabled={triggeringAutoCrawl}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(157,78,221,0.2)',
+                  color: '#c77dff',
+                  border: '1px solid #9d4edd',
+                  borderRadius: '6px',
+                  padding: '8px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: triggeringAutoCrawl ? 'not-allowed' : 'pointer'
+                }}
+              >
+                <Zap size={15} className={triggeringAutoCrawl ? 'spin' : ''} />
+                <span>{triggeringAutoCrawl ? 'Sedang Merayapi...' : 'Jalankan Auto-Crawl Sekarang'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Real-time Status Card */}
+          <div style={{
+            background: '#090b10',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '8px',
+            padding: '16px',
+            marginBottom: '24px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '14px'
+          }}>
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status Auto-Crawl</div>
+              <div style={{ fontSize: '0.95rem', fontWeight: '800', color: autoCrawlConfig.enabled ? '#10b981' : 'var(--text-muted)', marginTop: '3px' }}>
+                {autoCrawlConfig.enabled ? '● AKTIF TERJADWAL' : '○ NONAKTIF'}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Mode Waktu Saat Ini</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff', marginTop: '3px' }}>
+                {autoCrawlConfig.mode === 'interval' 
+                  ? `Setiap ${autoCrawlConfig.intervalMinutes} Menit` 
+                  : `Jam Harian (${autoCrawlConfig.dailyTimes})`}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Terakhir Dijalankan</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                {autoCrawlConfig.lastRun ? new Date(autoCrawlConfig.lastRun).toLocaleString('id-ID') : 'Belum pernah'}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Jadwal Eksekusi Berikutnya</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--accent-gold)', fontWeight: '700', marginTop: '3px' }}>
+                {autoCrawlConfig.enabled 
+                  ? (autoCrawlConfig.nextRun ? new Date(autoCrawlConfig.nextRun).toLocaleString('id-ID') : 'Segera berjalan')
+                  : 'Aktifkan untuk menjadwalkan'}
+              </div>
+            </div>
+          </div>
+
+          {/* Configuration Form */}
+          <form onSubmit={handleSaveScheduler} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            {/* 1. Toggle Switch Active */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px',
+              background: '#0e121b',
+              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <div>
+                <div style={{ fontWeight: '700', color: '#fff', fontSize: '0.9rem' }}>
+                  Aktifkan Auto-Crawl Otomatis
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Server akan otomatis mengeksekusi crawl pada waktu yang Anda tentukan di bawah
+                </div>
+              </div>
+
+              <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoCrawlConfig.enabled}
+                  onChange={(e) => setAutoCrawlConfig({ ...autoCrawlConfig, enabled: e.target.checked })}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span style={{
+                  position: 'absolute',
+                  cursor: 'pointer',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  backgroundColor: autoCrawlConfig.enabled ? '#9d4edd' : '#334155',
+                  transition: '.3s',
+                  borderRadius: '34px'
+                }}>
+                  <span style={{
+                    position: 'absolute',
+                    content: '""',
+                    height: '18px',
+                    width: '18px',
+                    left: autoCrawlConfig.enabled ? '26px' : '4px',
+                    bottom: '4px',
+                    backgroundColor: 'white',
+                    transition: '.3s',
+                    borderRadius: '50%'
+                  }} />
+                </span>
+              </label>
+            </div>
+
+            {/* 2. Manual Time Mode Selector */}
+            <div style={{
+              background: '#0e121b',
+              borderRadius: '8px',
+              padding: '18px',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <label style={{ fontSize: '0.85rem', color: '#fff', fontWeight: '700', display: 'block', marginBottom: '12px' }}>
+                Pilih Mode Pengaturan Waktu Manual:
+              </label>
+
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '18px', flexWrap: 'wrap' }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: autoCrawlConfig.mode === 'interval' ? 'rgba(157,78,221,0.2)' : 'var(--bg-surface)',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  border: '1px solid',
+                  borderColor: autoCrawlConfig.mode === 'interval' ? '#9d4edd' : 'var(--border-subtle)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  color: '#fff'
+                }}>
+                  <input
+                    type="radio"
+                    name="crawlMode"
+                    value="interval"
+                    checked={autoCrawlConfig.mode === 'interval'}
+                    onChange={() => setAutoCrawlConfig({ ...autoCrawlConfig, mode: 'interval' })}
+                  />
+                  <span>Mode 1: Berdasarkan Interval Waktu (Setiap X Menit / Jam)</span>
+                </label>
+
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: autoCrawlConfig.mode === 'daily' ? 'rgba(157,78,221,0.2)' : 'var(--bg-surface)',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  border: '1px solid',
+                  borderColor: autoCrawlConfig.mode === 'daily' ? '#9d4edd' : 'var(--border-subtle)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: '600',
+                  color: '#fff'
+                }}>
+                  <input
+                    type="radio"
+                    name="crawlMode"
+                    value="daily"
+                    checked={autoCrawlConfig.mode === 'daily'}
+                    onChange={() => setAutoCrawlConfig({ ...autoCrawlConfig, mode: 'daily' })}
+                  />
+                  <span>Mode 2: Jam Tertentu Setiap Hari (Setting Waktu Manual)</span>
+                </label>
+              </div>
+
+              {/* Sub-setting for Mode 1: Interval */}
+              {autoCrawlConfig.mode === 'interval' && (
+                <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '10px', fontWeight: '600' }}>
+                    Pilih Frekuensi Interval Crawl:
+                  </div>
+
+                  {/* Preset quick buttons */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {[
+                      { min: 15, label: '15 Menit' },
+                      { min: 30, label: '30 Menit' },
+                      { min: 60, label: '1 Jam' },
+                      { min: 120, label: '2 Jam' },
+                      { min: 240, label: '4 Jam' },
+                      { min: 360, label: '6 Jam' },
+                      { min: 720, label: '12 Jam' },
+                      { min: 1440, label: '24 Jam (1 Hari)' }
+                    ].map(p => (
+                      <button
+                        type="button"
+                        key={p.min}
+                        onClick={() => setAutoCrawlConfig({ ...autoCrawlConfig, intervalMinutes: p.min })}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          fontSize: '0.78rem',
+                          fontWeight: autoCrawlConfig.intervalMinutes === p.min ? '700' : '500',
+                          background: autoCrawlConfig.intervalMinutes === p.min ? '#9d4edd' : 'rgba(255,255,255,0.05)',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Atau isi menit manual:</span>
+                    <input
+                      type="number"
+                      min="5"
+                      max="10080"
+                      value={autoCrawlConfig.intervalMinutes}
+                      onChange={(e) => setAutoCrawlConfig({ ...autoCrawlConfig, intervalMinutes: Number(e.target.value) })}
+                      style={{
+                        background: '#0a0d14',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '4px',
+                        padding: '6px 10px',
+                        fontSize: '0.85rem',
+                        color: '#fff',
+                        width: '100px'
+                      }}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Menit</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-setting for Mode 2: Daily Specific Times */}
+              {autoCrawlConfig.mode === 'daily' && (
+                <div style={{ padding: '14px', background: 'var(--bg-surface)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: '600' }}>
+                    Tentukan Jam Crawl Harian (Pisahkan dengan koma, format 24 jam JJ:MM):
+                  </div>
+                  <input
+                    type="text"
+                    value={autoCrawlConfig.dailyTimes}
+                    onChange={(e) => setAutoCrawlConfig({ ...autoCrawlConfig, dailyTimes: e.target.value })}
+                    placeholder="Contoh: 06:00, 12:00, 18:00, 21:00"
+                    style={{
+                      width: '100%',
+                      background: '#0a0d14',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      padding: '10px 14px',
+                      fontSize: '0.9rem',
+                      color: 'var(--accent-gold)',
+                      fontWeight: '700',
+                      marginBottom: '10px'
+                    }}
+                  />
+
+                  {/* Preset daily times buttons */}
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Pilih preset waktu cepat:</div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'Pagi & Sore (06:00, 18:00)', val: '06:00, 18:00' },
+                      { label: 'Pagi, Siang & Malam (06:00, 12:00, 18:00)', val: '06:00, 12:00, 18:00' },
+                      { label: '4x Sehari (06:00, 12:00, 18:00, 22:00)', val: '06:00, 12:00, 18:00, 22:00' },
+                      { label: 'Setiap 4 Jam (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)', val: '00:00, 04:00, 08:00, 12:00, 16:00, 20:00' }
+                    ].map(preset => (
+                      <button
+                        type="button"
+                        key={preset.val}
+                        onClick={() => setAutoCrawlConfig({ ...autoCrawlConfig, dailyTimes: preset.val })}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          background: autoCrawlConfig.dailyTimes === preset.val ? '#9d4edd' : 'rgba(255,255,255,0.05)',
+                          color: '#fff',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Action Mode & Max Per Source */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '16px'
+            }}>
+              {/* Action Mode */}
+              <div style={{ background: '#0e121b', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                <label style={{ fontSize: '0.82rem', color: '#fff', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
+                  Tindakan Setelah Berita Terambil:
+                </label>
+                <select
+                  value={autoCrawlConfig.action}
+                  onChange={(e) => setAutoCrawlConfig({ ...autoCrawlConfig, action: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: '#0a0d14',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '9px 12px',
+                    fontSize: '0.85rem',
+                    color: '#fff'
+                  }}
+                >
+                  <option value="queue">📥 Simpan ke Antrian (Tinjau &amp; Moderasi Dulu)</option>
+                  <option value="auto_publish">⚡ Langsung Terbitkan ke Portal (Auto-Publish)</option>
+                </select>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  {autoCrawlConfig.action === 'auto_publish' 
+                    ? 'Berita baru langsung tampil di portal dengan kategori otomatis.' 
+                    : 'Berita baru disimpan di antrian tabel bawah untuk disetujui redaksi.'}
+                </div>
+              </div>
+
+              {/* Max Per Source */}
+              <div style={{ background: '#0e121b', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                <label style={{ fontSize: '0.82rem', color: '#fff', fontWeight: '700', display: 'block', marginBottom: '8px' }}>
+                  Maksimal Berita per Sumber per Siklus:
+                </label>
+                <select
+                  value={autoCrawlConfig.maxPerSource}
+                  onChange={(e) => setAutoCrawlConfig({ ...autoCrawlConfig, maxPerSource: Number(e.target.value) })}
+                  style={{
+                    width: '100%',
+                    background: '#0a0d14',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '9px 12px',
+                    fontSize: '0.85rem',
+                    color: '#fff'
+                  }}
+                >
+                  <option value={5}>5 Berita Terbaru per Sumber</option>
+                  <option value={10}>10 Berita Terbaru per Sumber (Rekomendasi)</option>
+                  <option value={20}>20 Berita Terbaru per Sumber</option>
+                  <option value={50}>50 Berita Terbaru per Sumber</option>
+                </select>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Mencegah lonjakan trafik berlebih ke server media eksternal.
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+              <div>
+                {schedulerSaveSuccess && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399', fontSize: '0.85rem', fontWeight: '700' }}>
+                    <Check size={16} /> Pengaturan jadwal auto-crawl berhasil disimpan!
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingScheduler}
+                style={{
+                  background: 'linear-gradient(135deg, #7b2cbf, #5a189a)',
+                  color: '#fff',
+                  padding: '11px 24px',
+                  borderRadius: '6px',
+                  fontSize: '0.88rem',
+                  fontWeight: '700',
+                  border: 'none',
+                  cursor: savingScheduler ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 15px rgba(123, 44, 191, 0.4)'
+                }}
+              >
+                {savingScheduler ? 'Menyimpan...' : 'Simpan Pengaturan Jadwal Auto-Crawl'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* TAB 1: Crawl Control Center (Manual Crawl) */}
+      {activeSubTab === 'manual' && (
       <div style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
@@ -434,6 +998,7 @@ export default function CrawlerStudio({ navigate }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Crawled Articles Queue */}
       <div style={{
