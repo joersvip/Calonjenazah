@@ -9,8 +9,8 @@ import { subscribeAdminLive } from '../../services/telemetry';
 export default function AdminLayout({ activeTab, setActiveTab, navigate, children }) {
   const [token, setToken] = useState(localStorage.getItem('calonjenazah_token'));
   const [liveVisitors, setLiveVisitors] = useState([]);
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -118,6 +118,8 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
               </label>
               <input
                 type="text"
+                placeholder="Masukkan nama pengguna..."
+                required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 style={{
@@ -138,6 +140,8 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
               </label>
               <input
                 type="password"
+                placeholder="Masukkan kata sandi..."
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{
@@ -172,7 +176,6 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
           </form>
 
           <div style={{ marginTop: '24px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            <span style={{ display: 'block', marginBottom: '10px' }}>Kredensial Default: admin / admin123</span>
             <button
               onClick={() => navigate('/')}
               style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}
