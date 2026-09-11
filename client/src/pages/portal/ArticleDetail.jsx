@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ArticleCard from '../../components/portal/ArticleCard';
 import { 
   Clock, Eye, Share2, Volume2, VolumeX, MessageSquare, 
-  ExternalLink, ChevronLeft, Send, Sparkles, AlertCircle, Copy, Check
+  ExternalLink, ChevronLeft, Send, Sparkles, AlertCircle, Copy, Check,
+  X, BookOpen, Globe, Loader2, ArrowUpRight
 } from 'lucide-react';
 
 export default function ArticleDetail({ slug, navigate }) {
@@ -19,6 +20,17 @@ export default function ArticleDetail({ slug, navigate }) {
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
+  // Floating Full Article Pop-up States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalUrl, setModalUrl] = useState('');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalArticle, setModalArticle] = useState(null);
+  const [modalViewMode, setModalViewMode] = useState('reader'); // 'reader' | 'web'
+  const [modalError, setModalError] = useState(null);
+  const [modalFontSize, setModalFontSize] = useState(17);
+  const [modalIsSpeaking, setModalIsSpeaking] = useState(false);
+
   // Track scroll progress
   useEffect(() => {
     const handleScroll = () => {
@@ -31,6 +43,17 @@ export default function ArticleDetail({ slug, navigate }) {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Listen to Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isModalOpen) {
+        closeFullArticleModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isModalOpen]);
 
   // Fetch article
   useEffect(() => {
@@ -137,6 +160,138 @@ export default function ArticleDetail({ slug, navigate }) {
     window.open(`https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(window.location.href)}`, '_blank');
   };
 
+  // Open Floating Pop-Up Modal for full news article
+  const openFullArticleModal = (targetUrl, linkText) => {
+    const urlToUse = targetUrl || article?.source_url;
+    if (!urlToUse) return;
+
+    setIsModalOpen(true);
+    setModalUrl(urlToUse);
+    const cleanTitle = linkText && !linkText.toLowerCase().includes('continue reading') && !linkText.toLowerCase().includes('baca selengkapnya') && !linkText.toLowerCase().includes('read more')
+      ? linkText
+      : article?.title || 'Naskah Berita Lengkap';
+    setModalTitle(cleanTitle);
+    setModalLoading(true);
+    setModalError(null);
+    setModalArticle(null);
+    setModalViewMode('reader');
+
+    // Cancel main page TTS
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      setModalIsSpeaking(false);
+    }
+
+    fetch('/api/articles/external-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: urlToUse })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setModalLoading(false);
+        if (data.success && data.article && data.article.content) {
+          setModalArticle(data.article);
+        } else {
+          setModalError(data.error || 'Naskah berita tidak dapat diekstrak otomatis. Anda dapat beralih ke tampilan web asli langsung.');
+          setModalViewMode('web');
+        }
+      })
+      .catch(err => {
+        setModalLoading(false);
+        setModalError('Gangguan jaringan saat mengambil naskah: ' + err.message);
+        setModalViewMode('web');
+      });
+  };
+
+  // Close Floating Pop-Up Modal
+  const closeFullArticleModal = () => {
+    setIsModalOpen(false);
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setModalIsSpeaking(false);
+    }
+  };
+
+  // Toggle Text-to-Speech in Modal
+  const toggleModalSpeech = () => {
+    if (!('speechSynthesis' in window)) return;
+    if (modalIsSpeaking) {
+      window.speechSynthesis.cancel();
+      setModalIsSpeaking(false);
+    } else {
+      const textToRead = `${modalArticle?.title || article?.title}. ${modalArticle?.summary || ''}. ${(modalArticle?.content || '').replace(/<[^>]*>/g, ' ')}`;
+      const utterance = new SpeechSynthesisUtterance(textToRead);
+      utterance.lang = 'id-ID';
+      utterance.rate = 1.0;
+      utterance.pitch = 0.95;
+      utterance.onend = () => setModalIsSpeaking(false);
+      utterance.onerror = () => setModalIsSpeaking(false);
+      window.speechSynthesis.speak(utterance);
+      setModalIsSpeaking(true);
+    }
+  };
+
+  // Intercept click on any link inside article content (specifically "Continue reading", "Read more", or external sources)
+  const handleContentClick = (e) => {
+    const link = e.target.closest('a');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    const text = (link.textContent || '').trim().toLowerCase();
+
+    const isContinueReading = 
+      link.classList.contains('btn-popup-continue') ||
+      Boolean(link.getAttribute('data-popup-url')) ||
+      text.includes('continue reading') || 
+      text.includes('baca selengkapnya') || 
+      text.includes('read more') || 
+      text.includes('lanjut membaca') || 
+      text.includes('selengkapnya');
+
+    const isExternal = href && (href.startsWith('http://') || href.startsWith('https://')) && !href.includes(window.location.host);
+
+    if (isContinueReading || isExternal) {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetUrl = link.getAttribute('data-popup-url') || href || article?.source_url;
+      openFullArticleModal(targetUrl, link.textContent);
+    }
+  };
+
+  // Enhance article content: transform any "Continue reading" link into an attractive, interactive CTA card
+  const getRenderedContent = () => {
+    if (!article?.content) return '';
+    let html = article.content;
+
+    // Replace Continue reading / Read more / Baca selengkapnya link with custom interactive pop-up card
+    const continueRegex = /<a\s+([^>]*?)href=(["'])(http[s]?:\/\/[^"']+)\2([^>]*)>((?:(?!<\/?a\b)[^<])*?(?:continue reading|read more|baca selengkapnya|lanjut membaca)[^<]*?)<\/a>/gi;
+
+    return html.replace(continueRegex, (match, before, quote, href, after, text) => {
+      return `
+        <div class="continue-reading-card" style="margin: 32px 0 24px 0; padding: 20px 24px; background: linear-gradient(135deg, rgba(230,57,70,0.18) 0%, rgba(18,22,34,0.95) 100%); border: 1px solid rgba(230,57,70,0.45); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+          <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="width: 44px; height: 44px; border-radius: 10px; background: rgba(230,57,70,0.25); border: 1px solid rgba(230,57,70,0.5); display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+              📖
+            </div>
+            <div>
+              <div style="font-weight: 800; color: #ffffff; font-size: 1rem; font-family: var(--font-sans); margin-bottom: 3px;">
+                Lanjutkan Membaca Berita Lengkap
+              </div>
+              <div style="font-size: 0.8rem; color: #94a3b8; font-family: var(--font-sans);">
+                Klik untuk membuka naskah penuh di pop-up melayang tanpa dialihkan ke situs luar
+              </div>
+            </div>
+          </div>
+          <a href="${href}" class="btn-popup-continue" data-popup-url="${href}" style="display: inline-flex; align-items: center; gap: 8px; background: var(--accent-crimson); color: #ffffff; padding: 10px 20px; border-radius: 8px; font-weight: 700; font-size: 0.88rem; text-decoration: none; cursor: pointer; box-shadow: 0 4px 16px rgba(230,57,70,0.5); font-family: var(--font-sans);">
+            <span>Buka Berita Full (Pop-Up) ↗</span>
+          </a>
+        </div>
+      `;
+    });
+  };
+
   if (loading) {
     return (
       <div className="container" style={{ padding: '80px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -203,10 +358,26 @@ export default function ArticleDetail({ slug, navigate }) {
           </span>
 
           {article.source_name && (
-            <span className="badge-source" style={{ fontSize: '0.8rem', padding: '5px 12px' }}>
-              <ExternalLink size={12} />
-              Sumber Asli: {article.source_name}
-            </span>
+            <button
+              type="button"
+              onClick={() => openFullArticleModal(article.source_url, article.source_name)}
+              className="badge-source"
+              style={{
+                fontSize: '0.8rem',
+                padding: '5px 12px',
+                cursor: article.source_url ? 'pointer' : 'default',
+                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.06)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title={article.source_url ? 'Klik untuk membaca naskah penuh di pop-up melayang' : ''}
+            >
+              <BookOpen size={12} color="var(--accent-gold)" />
+              <span>Sumber: {article.source_name}</span>
+              {article.source_url && <span style={{ fontSize: '0.7rem', color: 'var(--accent-gold)' }}>(Pop-up Full)</span>}
+            </button>
           )}
         </div>
 
@@ -329,8 +500,29 @@ export default function ArticleDetail({ slug, navigate }) {
               }}
             />
             {article.source_url && (
-              <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'right' }}>
-                Sumber asli: <a href={article.source_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-gold)', textDecoration: 'underline' }}>{article.source_name || 'Tautan Asli'}</a>
+              <div style={{ marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                <span>Sumber Asli:</span>
+                <button
+                  type="button"
+                  onClick={() => openFullArticleModal(article.source_url, article.source_name || 'Berita Asli')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    background: 'rgba(212,175,55,0.15)',
+                    border: '1px solid rgba(212,175,55,0.4)',
+                    color: 'var(--accent-gold)',
+                    padding: '3px 10px',
+                    borderRadius: '5px',
+                    fontSize: '0.75rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                  title="Buka berita penuh di pop-up melayang tanpa dialihkan keluar situs"
+                >
+                  <BookOpen size={12} />
+                  <span>{article.source_name || 'Lihat Berita Penuh di Pop-Up'}</span>
+                </button>
               </div>
             )}
           </div>
@@ -338,6 +530,7 @@ export default function ArticleDetail({ slug, navigate }) {
 
         {/* Article Body Content */}
         <div
+          onClick={handleContentClick}
           style={{
             fontSize: `${fontSize}px`,
             lineHeight: 1.8,
@@ -345,7 +538,7 @@ export default function ArticleDetail({ slug, navigate }) {
             fontFamily: 'var(--font-serif)',
             marginBottom: '40px'
           }}
-          dangerouslySetInnerHTML={{ __html: article.content }}
+          dangerouslySetInnerHTML={{ __html: getRenderedContent() }}
         />
 
         {/* Tags */}
@@ -633,6 +826,383 @@ export default function ArticleDetail({ slug, navigate }) {
         )}
 
       </div>
+
+      {/* Floating Pop-Up Modal for Full News Article (Tanpa Alihkan Situs) */}
+      {isModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(3, 5, 9, 0.88)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={closeFullArticleModal}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#0e121a',
+              border: '1px solid rgba(230, 57, 70, 0.4)',
+              borderRadius: '14px',
+              maxWidth: '920px',
+              width: '100%',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(230, 57, 70, 0.15)',
+              overflow: 'hidden'
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: '14px 20px',
+              background: '#080a0f',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap'
+            }}>
+              {/* Left: Source Tag & Headline */}
+              <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: '700',
+                    color: 'var(--accent-gold)',
+                    background: 'rgba(212,175,55,0.15)',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(212,175,55,0.3)'
+                  }}>
+                    <BookOpen size={11} />
+                    {modalArticle?.source_name || article?.source_name || 'Sumber Berita Asli'}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    <Check size={11} /> Pop-up Melayang (Tetap di Portal)
+                  </span>
+                </div>
+                <h4 style={{
+                  fontSize: '0.92rem',
+                  fontWeight: '700',
+                  color: '#fff',
+                  margin: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {modalArticle?.title || modalTitle}
+                </h4>
+              </div>
+
+              {/* Right Tools & Controls */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* View Mode Switcher */}
+                <div style={{
+                  display: 'flex',
+                  background: 'rgba(255,255,255,0.06)',
+                  borderRadius: '6px',
+                  padding: '2px',
+                  border: '1px solid var(--border-subtle)'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalViewMode('reader')}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.74rem',
+                      fontWeight: '700',
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: modalViewMode === 'reader' ? 'var(--accent-crimson)' : 'transparent',
+                      color: modalViewMode === 'reader' ? '#fff' : 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Tampilan naskah bersih tanpa iklan dan tanpa pengalihan situs"
+                  >
+                    <BookOpen size={12} />
+                    <span>Naskah Bersih</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalViewMode('web')}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.74rem',
+                      fontWeight: '700',
+                      borderRadius: '4px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: modalViewMode === 'web' ? 'var(--accent-crimson)' : 'transparent',
+                      color: modalViewMode === 'web' ? '#fff' : 'var(--text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Tampilan web asli langsung di dalam frame pop-up"
+                  >
+                    <Globe size={12} />
+                    <span>Web Asli</span>
+                  </button>
+                </div>
+
+                {/* TTS in Modal */}
+                {modalViewMode === 'reader' && modalArticle && (
+                  <button
+                    type="button"
+                    onClick={toggleModalSpeech}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '5px 10px',
+                      background: modalIsSpeaking ? 'var(--accent-crimson)' : 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer'
+                    }}
+                    title="Dengarkan pembacaan naskah ini"
+                  >
+                    {modalIsSpeaking ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  </button>
+                )}
+
+                {/* Font Scaler in Modal */}
+                {modalViewMode === 'reader' && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)'
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => setModalFontSize(Math.max(14, modalFontSize - 2))}
+                      style={{ padding: '4px 8px', color: 'var(--text-secondary)', fontSize: '0.75rem', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                    >
+                      A-
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setModalFontSize(Math.min(22, modalFontSize + 2))}
+                      style={{ padding: '4px 8px', color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 'bold', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                    >
+                      A+
+                    </button>
+                  </div>
+                )}
+
+                {/* External tab fallback button */}
+                {modalUrl && (
+                  <a
+                    href={modalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '5px 8px',
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)',
+                      color: 'var(--text-muted)'
+                    }}
+                    title="Buka tautan asli di tab baru jika diperlukan"
+                  >
+                    <ArrowUpRight size={14} />
+                  </a>
+                )}
+
+                {/* Close Modal Button */}
+                <button
+                  type="button"
+                  onClick={closeFullArticleModal}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '6px',
+                    background: 'rgba(230,57,70,0.15)',
+                    border: '1px solid rgba(230,57,70,0.4)',
+                    color: '#ff858d',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s'
+                  }}
+                  title="Tutup pop-up (Esc)"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: modalViewMode === 'reader' ? '28px 32px' : '0',
+              background: '#0a0d14'
+            }}>
+              {modalLoading ? (
+                <div style={{ padding: '70px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <div style={{
+                    width: '44px',
+                    height: '44px',
+                    border: '3px solid rgba(230,57,70,0.2)',
+                    borderTopColor: 'var(--accent-crimson)',
+                    borderRadius: '50%',
+                    margin: '0 auto 18px auto',
+                    animation: 'spin 0.8s linear infinite'
+                  }} />
+                  <h4 style={{ color: '#fff', fontSize: '1rem', fontWeight: '700', marginBottom: '6px' }}>
+                    Mengambil Naskah Berita Penuh...
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto', lineHeight: 1.5 }}>
+                    Sistem sedang mengekstrak teks berita lengkap langsung dari sumber agar Anda dapat membaca dengan nyaman tanpa dialihkan ke situs luar.
+                  </p>
+                </div>
+              ) : modalViewMode === 'reader' && modalArticle ? (
+                <div>
+                  {/* Article Title */}
+                  <h2 className="editorial-title" style={{
+                    fontSize: '1.45rem',
+                    lineHeight: 1.35,
+                    color: '#ffffff',
+                    marginBottom: '14px'
+                  }}>
+                    {modalArticle.title || modalTitle}
+                  </h2>
+
+                  {/* Metadata Byline */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    flexWrap: 'wrap',
+                    paddingBottom: '16px',
+                    marginBottom: '22px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-muted)'
+                  }}>
+                    <span>Penulis: <strong style={{ color: '#fff' }}>{modalArticle.author || 'Redaksi Sumber'}</strong></span>
+                    {modalArticle.pubDate && (
+                      <span>Terbit: {new Date(modalArticle.pubDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                    )}
+                    <span>Penerbit: <strong style={{ color: 'var(--accent-gold)' }}>{modalArticle.source_name || 'Portal Asli'}</strong></span>
+                  </div>
+
+                  {/* Modal Hero Image */}
+                  {modalArticle.image_url && (
+                    <div style={{ marginBottom: '24px' }}>
+                      <img
+                        src={modalArticle.image_url}
+                        alt={modalArticle.title}
+                        style={{
+                          width: '100%',
+                          maxHeight: '420px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-subtle)'
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Full Text Content */}
+                  <div
+                    style={{
+                      fontSize: `${modalFontSize}px`,
+                      lineHeight: 1.85,
+                      color: '#e2e8f0',
+                      fontFamily: 'var(--font-serif)'
+                    }}
+                    dangerouslySetInnerHTML={{ __html: modalArticle.content }}
+                  />
+
+                  {/* Footnote Notice */}
+                  <div style={{
+                    marginTop: '36px',
+                    padding: '16px 20px',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px dashed var(--border-subtle)',
+                    borderRadius: '8px',
+                    fontSize: '0.78rem',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px'
+                  }}>
+                    <span>
+                      ℹ️ Naskah ini ditampilkan melalui <strong>Pop-Up Melayang CALON JENAZAH</strong> untuk kenyamanan membaca tanpa dialihkan keluar situs. Hak cipta tetap milik penerbit asli.
+                    </span>
+                    {modalUrl && (
+                      <a
+                        href={modalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: 'var(--accent-gold)', textDecoration: 'underline' }}
+                      >
+                        Buka di Halaman Web Asli ↗
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Web Mode (Iframe Viewer) */
+                <div style={{ height: '70vh', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{
+                    padding: '8px 16px',
+                    background: 'rgba(0,0,0,0.6)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span>🌐 Memuat situs web langsung di dalam pop-up melayang...</span>
+                    {modalUrl && (
+                      <a href={modalUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-gold)', textDecoration: 'underline' }}>
+                        Buka di Tab Baru ↗
+                      </a>
+                    )}
+                  </div>
+                  <iframe
+                    src={modalUrl}
+                    title="Full Article Web View"
+                    style={{
+                      flex: 1,
+                      width: '100%',
+                      border: 'none',
+                      background: '#fff'
+                    }}
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

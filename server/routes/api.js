@@ -149,6 +149,60 @@ router.get('/articles/:slug', (req, res) => {
   }
 });
 
+// Fetch external news content for pop-up reader view without navigating away
+router.all('/articles/external-content', async (req, res) => {
+  try {
+    const url = req.method === 'GET' ? req.query.url : req.body?.url;
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+      return res.status(400).json({ success: false, error: 'URL berita eksternal tidak valid' });
+    }
+
+    // Check if we already have this in crawled_articles
+    const existingCrawled = db.prepare('SELECT title, summary, content, source_feed, pub_date FROM crawled_articles WHERE link = ?').get(url);
+
+    // Scrape clean full content
+    let scraped = null;
+    try {
+      scraped = await scrapeNewsFromUrl(url);
+    } catch (scrapeErr) {
+      if (existingCrawled && existingCrawled.content) {
+        return res.json({
+          success: true,
+          article: {
+            title: existingCrawled.title,
+            summary: existingCrawled.summary,
+            content: existingCrawled.content,
+            source_name: existingCrawled.source_feed,
+            pubDate: existingCrawled.pub_date,
+            url
+          }
+        });
+      }
+      return res.status(500).json({ 
+        success: false, 
+        error: `Tidak dapat memuat konten dari sumber luar: ${scrapeErr.message}`,
+        url
+      });
+    }
+
+    res.json({
+      success: true,
+      article: {
+        title: scraped.title,
+        summary: scraped.summary,
+        content: scraped.content || (existingCrawled ? existingCrawled.content : ''),
+        author: scraped.author,
+        image_url: scraped.imageUrl,
+        source_name: scraped.domain,
+        pubDate: scraped.pubDate,
+        url
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Add reaction to an article
 router.post('/articles/:id/reactions', (req, res) => {
   try {
