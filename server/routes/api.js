@@ -386,6 +386,52 @@ router.delete('/admin/articles/:id', (req, res) => {
   }
 });
 
+// Batch delete multiple articles
+router.post('/admin/articles/batch-delete', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Daftar ID artikel tidak boleh kosong' });
+    }
+    const delArt = db.prepare('DELETE FROM articles WHERE id = ?');
+    const delCom = db.prepare('DELETE FROM comments WHERE article_id = ?');
+    for (const id of ids) {
+      delArt.run(id);
+      delCom.run(id);
+    }
+    res.json({ success: true, count: ids.length, message: `${ids.length} artikel berhasil dihapus` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Batch update category for multiple articles
+router.put('/admin/articles/batch-category', (req, res) => {
+  try {
+    const { ids, category_id } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0 || !category_id) {
+      return res.status(400).json({ success: false, error: 'Daftar ID dan kategori wajib diisi' });
+    }
+    const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(category_id);
+    if (!cat) return res.status(400).json({ success: false, error: 'Kategori tidak valid' });
+
+    const updateStmt = db.prepare('UPDATE articles SET category_id = ?, category_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    for (const id of ids) {
+      updateStmt.run(cat.id, cat.name, id);
+    }
+
+    res.json({
+      success: true,
+      count: ids.length,
+      message: `${ids.length} berita berhasil dipindahkan ke kategori ${cat.name}`,
+      category_id: cat.id,
+      category_name: cat.name
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==========================================
 // 5. FITUR RE-UPLOAD BERITA VIA LINK
 // ==========================================
