@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { scrapeNewsFromUrl } = require('../services/scraper');
-const { crawlFeed, importCrawledArticle } = require('../services/crawler');
+const { crawlFeed, importCrawledArticle, syncCrawledWithArticles } = require('../services/crawler');
 const { 
   extractClientIp, resolveGeo, resolveGeoOnline, parseUserAgent, 
   logVisit, getVisitorAnalytics, activeVisitors, getCleanActiveVisitors 
@@ -588,6 +588,11 @@ router.post('/admin/articles', (req, res) => {
       status || 'published'
     );
 
+    // Auto-sync with crawled articles to mark uploaded
+    try {
+      syncCrawledWithArticles();
+    } catch (e) {}
+
     res.json({ success: true, id: result.lastInsertRowid, slug });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -639,6 +644,12 @@ router.delete('/admin/articles/:id', (req, res) => {
     const { id } = req.params;
     db.prepare('DELETE FROM articles WHERE id = ?').run(id);
     db.prepare('DELETE FROM comments WHERE article_id = ?').run(id);
+    
+    // Auto-sync with crawled articles to reset pending if deleted
+    try {
+      syncCrawledWithArticles();
+    } catch (e) {}
+
     res.json({ success: true, message: 'Artikel berhasil dihapus' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -658,6 +669,12 @@ router.post('/admin/articles/batch-delete', (req, res) => {
       delArt.run(id);
       delCom.run(id);
     }
+
+    // Auto-sync with crawled articles to reset pending if deleted
+    try {
+      syncCrawledWithArticles();
+    } catch (e) {}
+
     res.json({ success: true, count: ids.length, message: `${ids.length} artikel berhasil dihapus` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -767,22 +784,77 @@ router.post('/crawler/fetch', async (req, res) => {
   }
 });
 
-// Get crawled articles
+// Get crawled articles with rich duplicate matching with published articles
 router.get('/crawler/articles', (req, res) => {
   try {
+    // Run bidirectional sync to make sure statuses match published articles
+    syncCrawledWithArticles();
+
     const { status = 'all' } = req.query;
-    let query = 'SELECT * FROM crawled_articles';
+    let query = `
+      SELECT c.*,
+             a.id as uploaded_article_id,
+             a.title as uploaded_article_title,
+             a.slug as uploaded_article_slug,
+             a.status as uploaded_article_status,
+             a.created_at as uploaded_at
+      FROM crawled_articles c
+      LEFT JOIN articles a ON (
+        (a.source_url IS NOT NULL AND a.source_url != '' AND a.source_url = c.link)
+        OR LOWER(TRIM(a.title)) = LOWER(TRIM(c.title))
+      )
+    `;
     const params = [];
 
-    if (status !== 'all') {
-      query += ' WHERE status = ?';
+    if (status === 'pending') {
+      query += " WHERE c.status = 'pending' AND a.id IS NULL";
+    } else if (status === 'imported') {
+      query += " WHERE (c.status = 'imported' OR a.id IS NOT NULL)";
+    } else if (status !== 'all') {
+      query += ' WHERE c.status = ?';
       params.push(status);
     }
 
-    query += ' ORDER BY created_at DESC LIMIT 100';
+    query += ' ORDER BY c.created_at DESC LIMIT 300';
 
     const articles = db.prepare(query).all(...params);
-    res.json({ success: true, articles });
+
+    // Also get overall counts
+    const counts = db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN c.status = 'imported' OR a.id IS NOT NULL THEN 1 ELSE 0 END) as importedCount,
+        SUM(CASE WHEN c.status = 'pending' AND a.id IS NULL THEN 1 ELSE 0 END) as pendingCount
+      FROM crawled_articles c
+      LEFT JOIN articles a ON (
+        (a.source_url IS NOT NULL AND a.source_url != '' AND a.source_url = c.link)
+        OR LOWER(TRIM(a.title)) = LOWER(TRIM(c.title))
+      )
+    `).get();
+
+    res.json({ 
+      success: true, 
+      articles,
+      counts: {
+        total: counts.total || 0,
+        imported: counts.importedCount || 0,
+        pending: counts.pendingCount || 0
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manual synchronization endpoint between Manajemen Berita and Web Crawler
+router.post('/crawler/sync-articles', (req, res) => {
+  try {
+    const syncResult = syncCrawledWithArticles();
+    res.json({
+      success: true,
+      message: `Sinkronisasi selesai! ${syncResult.syncedToImported} berita disinkronkan ke status terupload, ${syncResult.resetToPending} berita direset ke pending.`,
+      ...syncResult
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -149,11 +149,11 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     }
   }
 
-  // Save unique crawled articles to database with detected category
+  // Save unique crawled articles to database with detected category & check against articles table
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO crawled_articles (
       source_feed, title, link, summary, content, image_url, pub_date, category_id, category_name, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const updateCatStmt = db.prepare(`
@@ -162,9 +162,20 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     WHERE link = ? AND (category_id IS NULL OR category_name IS NULL)
   `);
 
+  const checkDuplicateStmt = db.prepare(`
+    SELECT id FROM articles 
+    WHERE (source_url IS NOT NULL AND source_url != '' AND source_url = ?)
+       OR LOWER(TRIM(title)) = LOWER(TRIM(?))
+    LIMIT 1
+  `);
+
   let insertedCount = 0;
   for (const item of crawledItems) {
     if (item.title && item.link) {
+      // Check if this article already exists in published articles (Manajemen Berita)
+      const isAlreadyInArticles = checkDuplicateStmt.get(item.link, item.title);
+      const initialStatus = isAlreadyInArticles ? 'imported' : 'pending';
+
       const res = insertStmt.run(
         item.source_feed,
         item.title,
@@ -174,16 +185,24 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
         item.image_url || '',
         item.pub_date || new Date().toISOString(),
         item.category_id,
-        item.category_name
+        item.category_name,
+        initialStatus
       );
       if (res.changes > 0) {
         insertedCount++;
       } else {
-        // If already exists, update category if it was missing
+        // If already exists in crawled_articles, keep category updated
         updateCatStmt.run(item.category_id, item.category_name, item.link);
+        // If it now exists in articles, synchronize status to 'imported'
+        if (isAlreadyInArticles) {
+          db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE link = ?").run(item.link);
+        }
       }
     }
   }
+
+  // Run full bidirectional sync
+  syncCrawledWithArticles();
 
   return {
     source: sourceName,
@@ -194,8 +213,57 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
 }
 
 /**
+ * Synchronize crawled articles with published articles in Manajemen Berita.
+ * 1. Marks crawled articles as 'imported' if their link or title matches an article in articles table.
+ * 2. If an article was deleted from articles table, resets matching crawled item to 'pending' so it can be re-crawled/imported.
+ */
+function syncCrawledWithArticles() {
+  try {
+    // 1. Mark crawled as 'imported' if exists in articles
+    const syncToImported = db.prepare(`
+      UPDATE crawled_articles 
+      SET status = 'imported' 
+      WHERE status != 'imported'
+        AND (
+          link IN (SELECT source_url FROM articles WHERE source_url IS NOT NULL AND source_url != '')
+          OR LOWER(TRIM(title)) IN (SELECT LOWER(TRIM(title)) FROM articles)
+        )
+    `).run();
+
+    // 2. If a crawled article was marked 'imported' but the article was deleted from articles table, reset to 'pending'
+    const syncToPending = db.prepare(`
+      UPDATE crawled_articles
+      SET status = 'pending'
+      WHERE status = 'imported'
+        AND link NOT IN (SELECT source_url FROM articles WHERE source_url IS NOT NULL AND source_url != '')
+        AND LOWER(TRIM(title)) NOT IN (SELECT LOWER(TRIM(title)) FROM articles)
+    `).run();
+
+    const counts = db.prepare(`
+      SELECT 
+        SUM(CASE WHEN status = 'imported' THEN 1 ELSE 0 END) as importedCount,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendingCount,
+        COUNT(*) as totalCount
+      FROM crawled_articles
+    `).get();
+
+    return {
+      syncedToImported: syncToImported.changes,
+      resetToPending: syncToPending.changes,
+      totalImported: counts.importedCount || 0,
+      totalPending: counts.pendingCount || 0,
+      totalCount: counts.totalCount || 0
+    };
+  } catch (err) {
+    console.error('Error in syncCrawledWithArticles:', err);
+    return { syncedToImported: 0, resetToPending: 0 };
+  }
+}
+
+/**
  * Import a crawled article directly into the main articles table.
  * If categoryId is 'auto', undefined, or <= 0, the auto-detected category from source will be used.
+ * Guarantees NO duplicate articles are created in Manajemen Berita.
  * 
  * @param {number} crawledId - ID of crawled_articles
  * @param {number|string} categoryId - Category ID to assign, or 'auto'
@@ -204,6 +272,29 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
 async function importCrawledArticle(crawledId, categoryId = 'auto', deepScrape = true) {
   const crawled = db.prepare('SELECT * FROM crawled_articles WHERE id = ?').get(crawledId);
   if (!crawled) throw new Error('Artikel crawled tidak ditemukan.');
+
+  // Guard against duplicate upload: Check if already exists in published articles
+  const existingArticle = db.prepare(`
+    SELECT id, title, slug, category_name FROM articles 
+    WHERE (source_url IS NOT NULL AND source_url != '' AND source_url = ?)
+       OR LOWER(TRIM(title)) = LOWER(TRIM(?))
+    LIMIT 1
+  `).get(crawled.link, crawled.title);
+
+  if (existingArticle) {
+    // Synchronize crawled status to imported immediately
+    db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE id = ?").run(crawledId);
+    return {
+      success: true,
+      alreadyExists: true,
+      duplicatePrevented: true,
+      articleId: existingArticle.id,
+      slug: existingArticle.slug,
+      title: existingArticle.title,
+      category_name: existingArticle.category_name,
+      message: `Berita "${existingArticle.title}" sudah terbit di Manajemen Berita. Duplikasi berhasil dicegah.`
+    };
+  }
 
   let targetCatId = categoryId;
   let targetCatName = crawled.category_name || '';
@@ -228,6 +319,28 @@ async function importCrawledArticle(crawledId, categoryId = 'auto', deepScrape =
       if (fullArticle.image_url) imageUrl = fullArticle.image_url;
       if (fullArticle.author) author = fullArticle.author;
       if (fullArticle.source_name) sourceName = fullArticle.source_name;
+
+      // Re-check duplicate with deep scraped title if changed
+      const secondCheck = db.prepare(`
+        SELECT id, title, slug, category_name FROM articles 
+        WHERE (source_url IS NOT NULL AND source_url != '' AND source_url = ?)
+           OR LOWER(TRIM(title)) = LOWER(TRIM(?))
+        LIMIT 1
+      `).get(crawled.link, title);
+
+      if (secondCheck) {
+        db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE id = ?").run(crawledId);
+        return {
+          success: true,
+          alreadyExists: true,
+          duplicatePrevented: true,
+          articleId: secondCheck.id,
+          slug: secondCheck.slug,
+          title: secondCheck.title,
+          category_name: secondCheck.category_name,
+          message: `Berita "${secondCheck.title}" sudah terbit di Manajemen Berita. Duplikasi berhasil dicegah.`
+        };
+      }
 
       // If auto-category was chosen, refine with full article content
       if (categoryId === 'auto' || !categoryId || targetCatId === 'auto' || Number(categoryId) <= 0) {
@@ -288,5 +401,7 @@ async function importCrawledArticle(crawledId, categoryId = 'auto', deepScrape =
 
 module.exports = {
   crawlFeed,
-  importCrawledArticle
+  importCrawledArticle,
+  syncCrawledWithArticles
 };
+

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Cpu, Play, Download, CheckCircle2, Clock, 
   ExternalLink, Eye, AlertCircle, Sparkles, Filter, CheckSquare, Square,
-  RefreshCw, Layers, Zap, Check, Calendar, Sliders
+  RefreshCw, Layers, Zap, Check, Calendar, Sliders, Search, ShieldCheck
 } from 'lucide-react';
 
 const CATEGORY_OPTIONS = [
@@ -49,6 +49,10 @@ export default function CrawlerStudio({ navigate }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [targetCategory, setTargetCategory] = useState('auto');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'imported'
+  const [queueSearch, setQueueSearch] = useState('');
+  const [isSyncingWithArticles, setIsSyncingWithArticles] = useState(false);
+  const [syncArticlesMsg, setSyncArticlesMsg] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [importing, setImporting] = useState(false);
@@ -229,10 +233,47 @@ export default function CrawlerStudio({ navigate }) {
       .catch(() => setSyncing(false));
   };
 
-  // Filtered queue items based on categoryFilter
+  // Trigger synchronization between Manajemen Berita and Crawled Articles
+  const handleSyncWithArticles = () => {
+    setIsSyncingWithArticles(true);
+    setSyncArticlesMsg('');
+    fetch('/api/crawler/sync-articles', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        setIsSyncingWithArticles(false);
+        if (data.success) {
+          setSyncArticlesMsg(`Sinkronisasi selesai: ${data.matchedCount} berita terverifikasi terbit di portal, ${data.unmatchedCount} belum diupload.`);
+          loadData();
+          setTimeout(() => setSyncArticlesMsg(''), 4500);
+        } else {
+          alert('Gagal menyinkronkan berita: ' + (data.error || data.message));
+        }
+      })
+      .catch(err => {
+        setIsSyncingWithArticles(false);
+        alert('Kesalahan jaringan: ' + err.message);
+      });
+  };
+
+  // Filtered queue items based on categoryFilter, statusFilter, and queueSearch
   const filteredArticles = crawledArticles.filter(item => {
-    if (categoryFilter === 'all') return true;
-    return String(item.category_id) === String(categoryFilter);
+    if (categoryFilter !== 'all' && String(item.category_id) !== String(categoryFilter)) {
+      return false;
+    }
+    const isImported = item.status === 'imported' || Boolean(item.uploaded_article_id);
+    if (statusFilter === 'pending' && isImported) {
+      return false;
+    }
+    if (statusFilter === 'imported' && !isImported) {
+      return false;
+    }
+    if (queueSearch.trim()) {
+      const q = queueSearch.toLowerCase().trim();
+      const titleMatch = (item.title || '').toLowerCase().includes(q);
+      const sourceMatch = (item.source_feed || '').toLowerCase().includes(q);
+      if (!titleMatch && !sourceMatch) return false;
+    }
+    return true;
   });
 
   // Calculate category counts for tabs
@@ -246,7 +287,19 @@ export default function CrawlerStudio({ navigate }) {
     6: crawledArticles.filter(a => String(a.category_id) === '6').length,
   };
 
-  // Toggle selection
+  // Total counts for upload status
+  const totalUploadedCount = crawledArticles.filter(a => a.status === 'imported' || Boolean(a.uploaded_article_id)).length;
+  const totalPendingCount = crawledArticles.length - totalUploadedCount;
+
+  // Selectable items in current filtered view: only items NOT yet imported/uploaded
+  const selectableIds = filteredArticles
+    .filter(a => a.status !== 'imported' && !a.uploaded_article_id)
+    .map(a => a.id);
+
+  const isAllSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selectedIds.includes(id));
+  const isSomeSelectableSelected = selectableIds.some(id => selectedIds.includes(id)) && !isAllSelectableSelected;
+
+  // Toggle single item selection
   const toggleSelect = (id) => {
     if (selectedIds.includes(id)) {
       setSelectedIds(selectedIds.filter(i => i !== id));
@@ -255,9 +308,17 @@ export default function CrawlerStudio({ navigate }) {
     }
   };
 
+  // Toggle master select all for currently visible selectable items
+  const toggleSelectAll = () => {
+    if (isAllSelectableSelected) {
+      setSelectedIds(selectedIds.filter(id => !selectableIds.includes(id)));
+    } else {
+      setSelectedIds(Array.from(new Set([...selectedIds, ...selectableIds])));
+    }
+  };
+
   const selectAll = () => {
-    const pendingIds = filteredArticles.filter(a => a.status === 'pending').map(a => a.id);
-    setSelectedIds(pendingIds);
+    toggleSelectAll();
   };
 
   const deselectAll = () => {
@@ -284,7 +345,12 @@ export default function CrawlerStudio({ navigate }) {
       .then(data => {
         if (data.success) {
           const successCount = data.results.filter(r => r.status === 'success').length;
-          setImportResultMsg(`Berhasil mengimpor ${successCount} berita langsung ke portal CALON JENAZAH!`);
+          const dupCount = data.duplicatePreventedCount || 0;
+          let msg = `Berhasil mengimpor ${successCount} berita langsung ke portal CALON JENAZAH!`;
+          if (dupCount > 0) {
+            msg += ` (${dupCount} artikel telah terbit sebelumnya dan duplikasi berhasil dicegah).`;
+          }
+          setImportResultMsg(msg);
           setSelectedIds([]);
           loadData();
         } else {
@@ -1019,21 +1085,79 @@ export default function CrawlerStudio({ navigate }) {
           gap: '14px',
           background: '#0c0f16'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <h3 className="display-font" style={{ fontSize: '1rem', fontWeight: '800', color: '#fff' }}>
               Antrian Berita Hasil Crawl ({crawledArticles.length})
             </h3>
+            
+            {/* Master Toggle Button */}
             <button
-              onClick={selectAll}
-              style={{ fontSize: '0.75rem', color: 'var(--accent-crimson)', textDecoration: 'underline' }}
+              type="button"
+              onClick={toggleSelectAll}
+              disabled={selectableIds.length === 0}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.78rem',
+                color: isAllSelectableSelected ? '#fff' : 'var(--accent-gold)',
+                background: isAllSelectableSelected ? 'var(--accent-crimson)' : 'rgba(212,175,55,0.12)',
+                border: isAllSelectableSelected ? '1px solid var(--accent-crimson)' : '1px solid rgba(212,175,55,0.35)',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer',
+                fontWeight: '700',
+                opacity: selectableIds.length === 0 ? 0.5 : 1,
+                transition: 'all 0.15s'
+              }}
+              title="Pilih atau batalkan semua berita di antrian yang belum diupload"
             >
-              Pilih Semua Pending
+              {isAllSelectableSelected ? (
+                <>
+                  <CheckSquare size={14} />
+                  <span>Batalkan Pilihan Semua</span>
+                </>
+              ) : (
+                <>
+                  <Square size={14} />
+                  <span>Pilih Semua Pending ({selectableIds.length})</span>
+                </>
+              )}
             </button>
+
+            {selectedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={deselectAll}
+                style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Reset Pilihan ({selectedIds.length})
+              </button>
+            )}
+
+            {/* Sync with Manajemen Berita Button */}
             <button
-              onClick={deselectAll}
-              style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}
+              type="button"
+              onClick={handleSyncWithArticles}
+              disabled={isSyncingWithArticles}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                color: '#60a5fa',
+                padding: '5px 12px',
+                borderRadius: '6px',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                cursor: isSyncingWithArticles ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s'
+              }}
+              title="Singkronkan status antrian crawler dengan Manajemen Berita untuk menghindari duplikasi berita yang diupload"
             >
-              Batal Pilih
+              <RefreshCw size={13} className={isSyncingWithArticles ? 'spinning' : ''} />
+              <span>{isSyncingWithArticles ? 'Menyinkronkan...' : '🔄 Sinkronkan dgn Manajemen Berita'}</span>
             </button>
           </div>
 
@@ -1095,6 +1219,7 @@ export default function CrawlerStudio({ navigate }) {
             )}
 
             <button
+              type="button"
               onClick={handleImport}
               disabled={selectedIds.length === 0 || importing}
               style={{
@@ -1107,6 +1232,8 @@ export default function CrawlerStudio({ navigate }) {
                 borderRadius: '6px',
                 fontSize: '0.82rem',
                 fontWeight: '700',
+                border: 'none',
+                cursor: selectedIds.length === 0 || importing ? 'not-allowed' : 'pointer',
                 opacity: selectedIds.length === 0 || importing ? 0.5 : 1
               }}
             >
@@ -1115,6 +1242,14 @@ export default function CrawlerStudio({ navigate }) {
             </button>
           </div>
         </div>
+
+        {/* Sync with Manajemen Berita Feedback Message */}
+        {syncArticlesMsg && (
+          <div style={{ padding: '11px 20px', background: 'rgba(59, 130, 246, 0.15)', color: '#93c5fd', fontSize: '0.82rem', borderBottom: '1px solid rgba(59, 130, 246, 0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldCheck size={16} color="#60a5fa" />
+            <span>{syncArticlesMsg}</span>
+          </div>
+        )}
 
         {/* Sync Feedback Message */}
         {syncMsg && (
@@ -1125,10 +1260,93 @@ export default function CrawlerStudio({ navigate }) {
         )}
 
         {importResultMsg && (
-          <div style={{ padding: '12px 20px', background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: '0.85rem' }}>
-            {importResultMsg}
+          <div style={{ padding: '12px 20px', background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(16,185,129,0.3)' }}>
+            <CheckCircle2 size={16} color="#34d399" />
+            <span>{importResultMsg}</span>
           </div>
         )}
+
+        {/* Status Filter & Search Queue Bar */}
+        <div style={{
+          padding: '10px 18px',
+          background: '#07090e',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status Berita:</span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              style={{
+                padding: '4px 11px',
+                borderRadius: '14px',
+                fontSize: '0.72rem',
+                fontWeight: statusFilter === 'all' ? '700' : '500',
+                background: statusFilter === 'all' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.04)',
+                color: statusFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+                border: '1px solid',
+                borderColor: statusFilter === 'all' ? 'rgba(255,255,255,0.3)' : 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              Semua ({crawledArticles.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('pending')}
+              style={{
+                padding: '4px 11px',
+                borderRadius: '14px',
+                fontSize: '0.72rem',
+                fontWeight: statusFilter === 'pending' ? '700' : '500',
+                background: statusFilter === 'pending' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.04)',
+                color: statusFilter === 'pending' ? '#fbbf24' : 'var(--text-secondary)',
+                border: '1px solid',
+                borderColor: statusFilter === 'pending' ? '#fbbf24' : 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              ⏳ Belum Diupload ({totalPendingCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('imported')}
+              style={{
+                padding: '4px 11px',
+                borderRadius: '14px',
+                fontSize: '0.72rem',
+                fontWeight: statusFilter === 'imported' ? '700' : '500',
+                background: statusFilter === 'imported' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.04)',
+                color: statusFilter === 'imported' ? '#34d399' : 'var(--text-secondary)',
+                border: '1px solid',
+                borderColor: statusFilter === 'imported' ? '#10b981' : 'transparent',
+                cursor: 'pointer'
+              }}
+            >
+              ✅ Terbit di Portal ({totalUploadedCount})
+            </button>
+          </div>
+
+          {/* Search input for queue */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#0a0d14', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '4px 10px' }}>
+            <Search size={13} color="var(--text-muted)" />
+            <input
+              type="text"
+              placeholder="Cari antrian berita..."
+              value={queueSearch}
+              onChange={(e) => setQueueSearch(e.target.value)}
+              style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.76rem', outline: 'none', width: '180px' }}
+            />
+            {queueSearch && (
+              <button onClick={() => setQueueSearch('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer' }}>×</button>
+            )}
+          </div>
+        </div>
 
         {/* Category Synchronization & Filter Tabs Bar */}
         <div style={{
@@ -1198,7 +1416,45 @@ export default function CrawlerStudio({ navigate }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                <th style={{ padding: '10px 14px', width: '40px' }}>Pilih</th>
+                {/* Master checkbox in column header */}
+                <th style={{ padding: '10px 14px', width: '48px' }}>
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    disabled={selectableIds.length === 0}
+                    title={isAllSelectableSelected ? 'Batalkan pilihan semua' : `Pilih semua berita (${selectableIds.length})`}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: selectableIds.length === 0 ? 'not-allowed' : 'pointer',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: isAllSelectableSelected ? 'var(--accent-crimson)' : 'var(--text-muted)',
+                      opacity: selectableIds.length === 0 ? 0.3 : 1
+                    }}
+                  >
+                    {isAllSelectableSelected ? (
+                      <CheckSquare size={17} color="var(--accent-crimson)" />
+                    ) : isSomeSelectableSelected ? (
+                      <div style={{
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '3px',
+                        border: '2px solid var(--accent-crimson)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(230,57,70,0.2)'
+                      }}>
+                        <div style={{ width: '8px', height: '2px', background: 'var(--accent-crimson)', borderRadius: '1px' }} />
+                      </div>
+                    ) : (
+                      <Square size={17} />
+                    )}
+                  </button>
+                </th>
                 <th style={{ padding: '10px 14px' }}>Judul Berita</th>
                 <th style={{ padding: '10px 14px' }}>Sumber Feed</th>
                 <th style={{ padding: '10px 14px' }}>Kategori Berita</th>
@@ -1211,20 +1467,38 @@ export default function CrawlerStudio({ navigate }) {
               {filteredArticles.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    {categoryFilter === 'all' 
+                    {categoryFilter === 'all' && statusFilter === 'all' && !queueSearch
                       ? 'Belum ada artikel hasil crawl. Pilih salah satu sumber di atas untuk memulai crawling!'
-                      : 'Tidak ada berita di antrian dengan kategori ini. Ubah filter kategori untuk melihat berita lainnya.'}
+                      : 'Tidak ada berita di antrian yang cocok dengan filter yang aktif saat ini.'}
                   </td>
                 </tr>
               ) : (
                 filteredArticles.map((item) => {
+                  const isUploaded = item.status === 'imported' || Boolean(item.uploaded_article_id);
                   const isSelected = selectedIds.includes(item.id);
-                  const isImported = item.status === 'imported';
                   return (
-                    <tr key={item.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: isImported ? 0.6 : 1 }}>
+                    <tr
+                      key={item.id}
+                      style={{
+                        borderBottom: '1px solid rgba(255,255,255,0.04)',
+                        background: isSelected ? 'rgba(230,57,70,0.08)' : isUploaded ? 'rgba(16,185,129,0.03)' : 'transparent',
+                        borderLeft: isSelected ? '3px solid var(--accent-crimson)' : isUploaded ? '3px solid #10b981' : '3px solid transparent',
+                        opacity: isUploaded ? 0.8 : 1,
+                        transition: 'all 0.15s'
+                      }}
+                    >
                       <td style={{ padding: '10px 14px' }}>
-                        {!isImported && (
-                          <button onClick={() => toggleSelect(item.id)}>
+                        {isUploaded ? (
+                          <span title="Berita ini sudah terbit di Manajemen Berita (terhindar dari duplikasi)" style={{ display: 'inline-flex', alignItems: 'center', color: '#10b981' }}>
+                            <CheckCircle2 size={16} />
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleSelect(item.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                            title={isSelected ? 'Batalkan pilihan' : 'Pilih berita untuk diupload/import'}
+                          >
                             {isSelected ? <CheckSquare size={16} color="var(--accent-crimson)" /> : <Square size={16} color="var(--text-muted)" />}
                           </button>
                         )}
@@ -1234,6 +1508,13 @@ export default function CrawlerStudio({ navigate }) {
                         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                           {item.title}
                         </div>
+                        {isUploaded && (
+                          <div style={{ marginTop: '3px' }}>
+                            <span style={{ fontSize: '0.7rem', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <ShieldCheck size={11} /> Terverifikasi ada di Manajemen Berita
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
@@ -1244,7 +1525,7 @@ export default function CrawlerStudio({ navigate }) {
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                         <select
                           value={item.category_id || 1}
-                          disabled={isImported}
+                          disabled={isUploaded}
                           onChange={(e) => handleItemCategoryChange(item.id, e.target.value)}
                           style={{
                             background: '#0a0d14',
@@ -1254,10 +1535,11 @@ export default function CrawlerStudio({ navigate }) {
                             fontSize: '0.75rem',
                             fontWeight: '700',
                             color: 'var(--accent-gold)',
-                            cursor: isImported ? 'not-allowed' : 'pointer',
-                            outline: 'none'
+                            cursor: isUploaded ? 'not-allowed' : 'pointer',
+                            outline: 'none',
+                            opacity: isUploaded ? 0.6 : 1
                           }}
-                          title="Klik untuk mengubah & menyinkronkan kategori berita ini"
+                          title={isUploaded ? 'Berita sudah terbit' : 'Klik untuk mengubah & menyinkronkan kategori berita ini'}
                         >
                           {CATEGORY_OPTIONS.map(cat => (
                             <option key={cat.id} value={cat.id}>
@@ -1272,23 +1554,53 @@ export default function CrawlerStudio({ navigate }) {
                       </td>
 
                       <td style={{ padding: '10px 14px' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.72rem',
-                          fontWeight: '700',
-                          background: isImported ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
-                          color: isImported ? '#34d399' : '#fbbf24'
-                        }}>
-                          {isImported ? 'Terbit di Portal' : 'Antrian'}
-                        </span>
+                        {isUploaded ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                              background: 'rgba(16,185,129,0.15)',
+                              color: '#34d399',
+                              width: 'fit-content'
+                            }}>
+                              <CheckCircle2 size={11} /> Terbit di Portal
+                            </span>
+                            {item.uploaded_article_slug && (
+                              <a
+                                href={`#/berita/${item.uploaded_article_slug}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ fontSize: '0.68rem', color: 'var(--accent-gold)', textDecoration: 'underline' }}
+                              >
+                                Lihat Berita ↗
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: '700',
+                            background: 'rgba(245,158,11,0.15)',
+                            color: '#fbbf24'
+                          }}>
+                            ⏳ Antrian Baru
+                          </span>
+                        )}
                       </td>
 
                       <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                           <button
+                            type="button"
                             onClick={() => setPreviewItem(item)}
-                            style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem' }}
+                            style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', color: '#fff', fontSize: '0.75rem', border: 'none', cursor: 'pointer' }}
                             title="Pratinjau artikel"
                           >
                             <Eye size={13} />
