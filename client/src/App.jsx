@@ -39,9 +39,33 @@ export default function App() {
 
   // Hash change routing
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace(/^#/, '') || '/';
+    const syncRouteAndTab = (hash) => {
       setCurrentRoute(hash);
+
+      if (hash === '/admin' || hash === '/admin/' || hash === '/admin/overview') {
+        setAdminTab('overview');
+      } else if (hash.startsWith('/admin/')) {
+        const sub = hash.replace('/admin/', '').split('?')[0];
+        const tabMap = {
+          'overview': 'overview',
+          'chat': 'admin-chat',
+          'admin-chat': 'admin-chat',
+          'users': 'admin-users',
+          'admin-users': 'admin-users',
+          'live-map': 'live-tracking',
+          'live-tracking': 'live-tracking',
+          'history': 'history',
+          'visitor-history': 'history',
+          'reupload': 'reupload',
+          'crawler': 'crawler',
+          'articles': 'articles',
+          'seo': 'seo',
+          'settings': 'settings'
+        };
+        if (tabMap[sub]) {
+          setAdminTab(tabMap[sub]);
+        }
+      }
 
       // Report telemetry on page change
       setTimeout(() => {
@@ -49,9 +73,15 @@ export default function App() {
       }, 100);
     };
 
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace(/^#/, '') || '/';
+      syncRouteAndTab(hash);
+    };
+
     window.addEventListener('hashchange', handleHashChange);
-    // Initial beacon
-    reportNavigation(currentRoute, document.title);
+    // Initial sync
+    const initialHash = window.location.hash.replace(/^#/, '') || '/';
+    syncRouteAndTab(initialHash);
 
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);

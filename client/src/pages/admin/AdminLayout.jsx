@@ -42,6 +42,13 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
             localStorage.setItem('calonjenazah_admin_user', JSON.stringify(data.user));
           }
           setToken(data.token);
+          if (setActiveTab) setActiveTab('overview');
+          // Directly redirect to Admin Dashboard
+          if (navigate) {
+            navigate('/admin');
+          } else {
+            window.location.hash = '/admin';
+          }
         } else {
           setLoginError(data.error || 'Login gagal');
         }
@@ -57,6 +64,12 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
     localStorage.removeItem('calonjenazah_token');
     localStorage.removeItem('calonjenazah_admin_user');
     setToken(null);
+    // Directly redirect to Public News Portal
+    if (navigate) {
+      navigate('/');
+    } else {
+      window.location.hash = '/';
+    }
   };
 
   // Login Modal / Screen if not authenticated
@@ -244,20 +257,43 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
           </div>
         </div>
 
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: 'rgba(16,185,129,0.15)',
-          color: '#34d399',
-          border: '1px solid rgba(16,185,129,0.3)',
-          fontSize: '0.72rem',
-          fontWeight: '800',
-          padding: '3px 10px',
-          borderRadius: '12px'
-        }}>
-          <span className="pulsing-dot-green" style={{ width: '6px', height: '6px' }}></span>
-          <span>{liveVisitors.length} Live</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'rgba(16,185,129,0.15)',
+            color: '#34d399',
+            border: '1px solid rgba(16,185,129,0.3)',
+            fontSize: '0.72rem',
+            fontWeight: '800',
+            padding: '3px 10px',
+            borderRadius: '12px'
+          }}>
+            <span className="pulsing-dot-green" style={{ width: '6px', height: '6px' }}></span>
+            <span>{liveVisitors.length} Live</span>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            title="Keluar dari Admin dan Langsung ke Portal Berita"
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#ef4444',
+              borderRadius: '6px',
+              padding: '6px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            <LogOut size={13} />
+            <span>Keluar</span>
+          </button>
         </div>
       </header>
 
@@ -458,31 +494,79 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
               </span>
             </div>
 
-            {/* Live Visitor Indicator */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              padding: '6px 14px',
-              borderRadius: '50px'
-            }}>
-              <span className="pulsing-dot-green"></span>
-              <span style={{ fontSize: '0.78rem', color: '#fff' }}>
-                <strong>{liveVisitors.length}</strong> Pengunjung Aktif
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {/* Live Visitor Indicator */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                padding: '6px 14px',
+                borderRadius: '50px'
+              }}>
+                <span className="pulsing-dot-green"></span>
+                <span style={{ fontSize: '0.78rem', color: '#fff' }}>
+                  <strong>{liveVisitors.length}</strong> Pengunjung Aktif
+                </span>
+                <button
+                  onClick={() => setActiveTab('live-tracking')}
+                  style={{
+                    fontSize: '0.72rem',
+                    color: 'var(--accent-crimson)',
+                    fontWeight: '700',
+                    borderLeft: '1px solid rgba(255,255,255,0.1)',
+                    paddingLeft: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Peta →
+                </button>
+              </div>
+
+              {/* Quick View Portal Button */}
               <button
-                onClick={() => setActiveTab('live-tracking')}
+                onClick={() => navigate('/')}
                 style={{
-                  fontSize: '0.72rem',
-                  color: 'var(--accent-crimson)',
-                  fontWeight: '700',
-                  borderLeft: '1px solid rgba(255,255,255,0.1)',
-                  paddingLeft: '8px'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '7px 12px',
+                  fontSize: '0.78rem',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
                 }}
+                title="Buka Portal Berita"
               >
-                Peta →
+                <ExternalLink size={13} />
+                <span>Lihat Portal</span>
+              </button>
+
+              {/* Quick Logout Button */}
+              <button
+                onClick={handleLogout}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: '6px',
+                  padding: '7px 12px',
+                  fontSize: '0.78rem',
+                  fontWeight: '700',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title="Keluar dari Admin dan Langsung Kembali ke Portal Berita"
+              >
+                <LogOut size={13} />
+                <span>Keluar</span>
               </button>
             </div>
           </div>
