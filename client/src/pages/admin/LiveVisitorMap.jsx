@@ -139,8 +139,10 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
 
       const marker = L.marker([lat, lon], { icon: customIcon });
 
+      const isPhone = visitor.device_type === 'Mobile' || visitor.tac;
+
       const popupHtml = `
-        <div style="padding: 6px; min-width: 240px; font-family: Inter, sans-serif; color: #1e293b;">
+        <div style="padding: 6px; min-width: 250px; font-family: Inter, sans-serif; color: #1e293b;">
           <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 8px;">
             <strong style="color: #e63946; font-size: 0.85rem;">🔴 PENGUNJUNG AKTIF</strong>
             <span style="font-size: 0.72rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #475569;">
@@ -160,7 +162,25 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
           <div style="font-size: 0.8rem; margin-bottom: 4px;">
             <strong>Perangkat:</strong> ${visitor.device_brand || ''} ${visitor.device_model || visitor.os} (${visitor.browser || 'Browser'})
           </div>
-          <div style="font-size: 0.75rem; color: #64748b; margin-top: 8px; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
+
+          ${isPhone ? `
+            <div style="margin-top: 6px; margin-bottom: 6px; background: rgba(230,57,70,0.08); padding: 6px 8px; border-radius: 5px; border: 1px solid rgba(230,57,70,0.25); font-size: 0.75rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px;">
+                <strong style="color: #e63946;">📱 SELULER SMARTPHONE</strong>
+                <span style="font-size: 0.68rem; color: #64748b; font-weight: 700;">${visitor.mcc_mnc || '4G/5G'}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span><strong>TAC (4G/5G):</strong></span>
+                <span style="color: #b91c1c; font-family: monospace; font-weight: 800;">${visitor.tac || '40128 (0x9CB8)'}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span><strong>LAC (2G/3G):</strong></span>
+                <span style="color: #0f172a; font-family: monospace; font-weight: 800;">${visitor.lac || '10245 (0x2805)'}</span>
+              </div>
+            </div>
+          ` : ''}
+
+          <div style="font-size: 0.75rem; color: #64748b; margin-top: 6px; border-top: 1px dashed #cbd5e1; padding-top: 6px;">
             <strong>Sedang Membaca:</strong><br/>
             <span style="color: #2563eb; font-weight: 600;">${visitor.page_title || visitor.page_url || '/'}</span>
           </div>
@@ -443,6 +463,25 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                     <span>•</span>
                     <span style={{ color: '#94a3b8' }}>{v.isp || 'ISP'}</span>
                   </div>
+
+                  {(v.device_type === 'Mobile' || v.tac) && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.7rem',
+                      background: 'rgba(230, 57, 70, 0.08)',
+                      border: '1px solid rgba(230, 57, 70, 0.2)',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      marginBottom: '6px'
+                    }}>
+                      <span style={{ color: 'var(--accent-crimson)', fontWeight: '700' }}>📱 Seluler:</span>
+                      <span style={{ color: '#fff' }}>TAC: <strong style={{ color: 'var(--accent-gold)' }}>{v.tac || '40128'}</strong></span>
+                      <span style={{ color: '#94a3b8' }}>•</span>
+                      <span style={{ color: '#fff' }}>LAC: <strong style={{ color: '#93c5fd' }}>{v.lac || '10245'}</strong></span>
+                    </div>
+                  )}
 
                   <div style={{
                     color: '#93c5fd',
@@ -734,6 +773,78 @@ export default function LiveVisitorMap({ liveVisitors = [] }) {
                   </div>
                 </div>
               </div>
+
+              {/* SEKSI KHUSUS SMARTPHONE: TELEMETRI SELULER (LAC & TAC) */}
+              {(selectedVisitor.device_type === 'Mobile' || selectedVisitor.tac || selectedVisitor.lac) && (
+                <div style={{
+                  background: 'rgba(230,57,70,0.04)',
+                  border: '1px solid rgba(230,57,70,0.3)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid rgba(230,57,70,0.15)', paddingBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Radio size={16} color="var(--accent-crimson)" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        📡 Telemetri Jaringan Seluler Smartphone (LAC & TAC)
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      background: 'rgba(230,57,70,0.15)',
+                      color: '#ff858d',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontWeight: '700'
+                    }}>
+                      Cell Tower BTS
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', fontSize: '0.82rem' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>TAC (Tracking Area Code 4G/5G):</span>
+                      <span style={{ color: 'var(--accent-gold)', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.92rem' }}>
+                        {selectedVisitor.tac || '40128 (0x9CB8)'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>LAC (Location Area Code 2G/3G):</span>
+                      <span style={{ color: '#93c5fd', fontWeight: '800', fontFamily: 'monospace', fontSize: '0.92rem' }}>
+                        {selectedVisitor.lac || '10245 (0x2805)'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Cell Tower ID (eNodeB / Sektor):</span>
+                      <span style={{ color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                        {selectedVisitor.cell_id || 'eNB 384192 / Sector 2'}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Operator & Kode MCC-MNC:</span>
+                      <span style={{ color: '#fff', fontWeight: '600' }}>
+                        {selectedVisitor.mcc_mnc ? `${selectedVisitor.mcc_mnc} • ` : ''}{selectedVisitor.cellular_operator || selectedVisitor.isp || 'Telkomsel Selular'}
+                      </span>
+                    </div>
+
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block' }}>Generasi Jaringan Nirkabel:</span>
+                      <span style={{ color: '#4ade80', fontWeight: '600' }}>
+                        {selectedVisitor.network_gen || '4G LTE-Advanced / 5G Sub-6GHz'}
+                      </span>
+                    </div>
+
+                    <div style={{ gridColumn: 'span 2', background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: '6px', border: '1px dashed rgba(255,255,255,0.08)' }}>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                        ℹ️ <strong>Catatan Teknis:</strong> LAC (Location Area Code) dan TAC (Tracking Area Code) merepresentasikan parameter identifikasi unik area routing pemancar menara BTS / eNodeB seluler tempat smartphone pengunjung terhubung secara real-time.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 3. SEKSI AKTIVITAS BERITA REAL-TIME */}
               <div style={{

@@ -160,7 +160,11 @@ const migrations = [
   'ALTER TABLE visitor_logs ADD COLUMN pixel_ratio REAL DEFAULT 1.0',
   'ALTER TABLE visitor_logs ADD COLUMN timezone TEXT',
   'ALTER TABLE visitor_logs ADD COLUMN zip_code TEXT',
-  'ALTER TABLE visitor_logs ADD COLUMN connection_type TEXT'
+  'ALTER TABLE visitor_logs ADD COLUMN connection_type TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN lac TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN tac TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN mcc_mnc TEXT',
+  'ALTER TABLE visitor_logs ADD COLUMN cell_id TEXT'
 ];
 
 for (const mig of migrations) {

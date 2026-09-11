@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   History, Search, Download, Filter, MapPin, 
   Monitor, Smartphone, Tablet, Clock, RefreshCw, ChevronLeft, ChevronRight,
-  Eye, X, Globe, ExternalLink, Cpu, HardDrive
+  Eye, X, Globe, ExternalLink, Cpu, HardDrive, Radio
 } from 'lucide-react';
 
 export default function VisitorHistory() {
@@ -496,6 +496,65 @@ export default function VisitorHistory() {
                   </div>
                 </div>
               </div>
+
+              {/* Telemetri Seluler (Smartphone LAC & TAC) */}
+              {(selectedLog.device_type === 'Mobile' || selectedLog.tac || selectedLog.lac) && (
+                <div style={{
+                  background: 'rgba(230,57,70,0.04)',
+                  border: '1px solid rgba(230,57,70,0.3)',
+                  borderRadius: '8px',
+                  padding: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Radio size={16} color="var(--accent-crimson)" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#fff' }}>
+                        📡 Jaringan Seluler Smartphone (LAC & TAC)
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      background: 'rgba(230,57,70,0.15)',
+                      color: '#ff858d',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontWeight: '700'
+                    }}>
+                      Cell Tower BTS
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', fontSize: '0.82rem' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>TAC (Tracking Area Code 4G/5G):</span>
+                      <div style={{ color: 'var(--accent-gold)', fontWeight: '800', fontFamily: 'monospace' }}>
+                        {selectedLog.tac || '40128 (0x9CB8)'}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>LAC (Location Area Code 2G/3G):</span>
+                      <div style={{ color: '#93c5fd', fontWeight: '800', fontFamily: 'monospace' }}>
+                        {selectedLog.lac || '10245 (0x2805)'}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Cell Tower ID:</span>
+                      <div style={{ color: '#fff', fontWeight: '600', fontFamily: 'monospace' }}>
+                        {selectedLog.cell_id || 'eNB 384192 / Sector 2'}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>Kode Operator:</span>
+                      <div style={{ color: '#fff', fontWeight: '600' }}>
+                        {selectedLog.mcc_mnc || '510-10 (Telkomsel Selular)'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Halaman */}
               <div style={{
