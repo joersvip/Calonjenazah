@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Cpu, Play, Download, CheckCircle2, Clock, 
-  ExternalLink, Eye, AlertCircle, Sparkles, Filter, CheckSquare, Square
+  ExternalLink, Eye, AlertCircle, Sparkles, Filter, CheckSquare, Square,
+  RefreshCw, Layers
 } from 'lucide-react';
+
+const CATEGORY_OPTIONS = [
+  { id: 1, name: 'Investigasi & Kriminal' },
+  { id: 2, name: 'Misteri & Sains Ajal' },
+  { id: 3, name: 'Hukum & Keadilan' },
+  { id: 4, name: 'Politik & Kuasa' },
+  { id: 5, name: 'Budaya & Religi' },
+  { id: 6, name: 'Opini & Refleksi' }
+];
 
 export default function CrawlerStudio({ navigate }) {
   const [sources, setSources] = useState([]);
@@ -16,6 +26,9 @@ export default function CrawlerStudio({ navigate }) {
   const [crawledArticles, setCrawledArticles] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
   const [targetCategory, setTargetCategory] = useState('auto');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
   const [importing, setImporting] = useState(false);
   const [importResultMsg, setImportResultMsg] = useState('');
   const [previewItem, setPreviewItem] = useState(null);
@@ -79,6 +92,84 @@ export default function CrawlerStudio({ navigate }) {
       });
   };
 
+  // Synchronize category for an individual item in the queue table
+  const handleItemCategoryChange = (itemId, newCatId) => {
+    const selectedCat = CATEGORY_OPTIONS.find(c => c.id === Number(newCatId));
+    if (!selectedCat) return;
+
+    // Optimistic UI update
+    setCrawledArticles(prev => prev.map(item => {
+      if (item.id === itemId) {
+        return { ...item, category_id: selectedCat.id, category_name: selectedCat.name };
+      }
+      return item;
+    }));
+
+    fetch(`/api/crawler/articles/${itemId}/category`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: selectedCat.id })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setSyncMsg(`Kategori artikel berhasil disinkronkan ke "${selectedCat.name}"`);
+          setTimeout(() => setSyncMsg(''), 3000);
+        }
+      })
+      .catch(() => {});
+  };
+
+  // Synchronize category in batch for all selected items
+  const handleBatchSyncCategory = () => {
+    if (selectedIds.length === 0 || targetCategory === 'auto') return;
+
+    const selectedCat = CATEGORY_OPTIONS.find(c => c.id === Number(targetCategory));
+    if (!selectedCat) return;
+
+    setSyncing(true);
+    fetch('/api/crawler/articles/batch-category', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: selectedIds,
+        category_id: selectedCat.id
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setCrawledArticles(prev => prev.map(item => {
+            if (selectedIds.includes(item.id)) {
+              return { ...item, category_id: selectedCat.id, category_name: selectedCat.name };
+            }
+            return item;
+          }));
+          setSyncMsg(`Berhasil menyinkronkan ${selectedIds.length} artikel ke kategori "${selectedCat.name}"!`);
+          setTimeout(() => setSyncMsg(''), 4000);
+        }
+        setSyncing(false);
+      })
+      .catch(() => setSyncing(false));
+  };
+
+  // Filtered queue items based on categoryFilter
+  const filteredArticles = crawledArticles.filter(item => {
+    if (categoryFilter === 'all') return true;
+    return String(item.category_id) === String(categoryFilter);
+  });
+
+  // Calculate category counts for tabs
+  const categoryCounts = {
+    all: crawledArticles.length,
+    1: crawledArticles.filter(a => String(a.category_id) === '1').length,
+    2: crawledArticles.filter(a => String(a.category_id) === '2').length,
+    3: crawledArticles.filter(a => String(a.category_id) === '3').length,
+    4: crawledArticles.filter(a => String(a.category_id) === '4').length,
+    5: crawledArticles.filter(a => String(a.category_id) === '5').length,
+    6: crawledArticles.filter(a => String(a.category_id) === '6').length,
+  };
+
   // Toggle selection
   const toggleSelect = (id) => {
     if (selectedIds.includes(id)) {
@@ -89,7 +180,7 @@ export default function CrawlerStudio({ navigate }) {
   };
 
   const selectAll = () => {
-    const pendingIds = crawledArticles.filter(a => a.status === 'pending').map(a => a.id);
+    const pendingIds = filteredArticles.filter(a => a.status === 'pending').map(a => a.id);
     setSelectedIds(pendingIds);
   };
 
@@ -314,7 +405,12 @@ export default function CrawlerStudio({ navigate }) {
             <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Kategori Masuk:</span>
             <select
               value={targetCategory}
-              onChange={(e) => setTargetCategory(e.target.value)}
+              onChange={(e) => {
+                setTargetCategory(e.target.value);
+                if (e.target.value !== 'auto') {
+                  setCategoryFilter(e.target.value);
+                }
+              }}
               style={{
                 background: '#0a0d14',
                 border: targetCategory === 'auto' ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
@@ -334,6 +430,32 @@ export default function CrawlerStudio({ navigate }) {
               <option value="5">Budaya & Religi</option>
               <option value="6">Opini & Refleksi</option>
             </select>
+
+            {/* Batch Category Sync Button */}
+            {selectedIds.length > 0 && targetCategory !== 'auto' && (
+              <button
+                type="button"
+                onClick={handleBatchSyncCategory}
+                disabled={syncing}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(212,175,55,0.15)',
+                  border: '1px solid var(--accent-gold)',
+                  color: 'var(--accent-gold)',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+                title="Sinkronkan kategori berita yang dipilih di antrian ke kategori ini"
+              >
+                <RefreshCw size={13} className={syncing ? 'spinning' : ''} />
+                <span>Sinkronkan ({selectedIds.length}) Kategori</span>
+              </button>
+            )}
 
             <button
               onClick={handleImport}
@@ -357,11 +479,82 @@ export default function CrawlerStudio({ navigate }) {
           </div>
         </div>
 
+        {/* Sync Feedback Message */}
+        {syncMsg && (
+          <div style={{ padding: '10px 20px', background: 'rgba(212,175,55,0.15)', color: 'var(--accent-gold)', fontSize: '0.82rem', borderBottom: '1px solid rgba(212,175,55,0.3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Sparkles size={14} />
+            <span>{syncMsg}</span>
+          </div>
+        )}
+
         {importResultMsg && (
           <div style={{ padding: '12px 20px', background: 'rgba(16,185,129,0.15)', color: '#34d399', fontSize: '0.85rem' }}>
             {importResultMsg}
           </div>
         )}
+
+        {/* Category Synchronization & Filter Tabs Bar */}
+        <div style={{
+          padding: '10px 18px',
+          background: '#090b10',
+          borderBottom: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          overflowX: 'auto',
+          whiteSpace: 'nowrap'
+        }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginRight: '6px' }}>
+            <Filter size={13} />
+            Singkronkan Filter Kategori:
+          </span>
+
+          <button
+            onClick={() => { setCategoryFilter('all'); }}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '20px',
+              fontSize: '0.74rem',
+              fontWeight: '700',
+              background: categoryFilter === 'all' ? 'var(--accent-crimson)' : 'rgba(255,255,255,0.06)',
+              color: categoryFilter === 'all' ? '#fff' : 'var(--text-secondary)',
+              border: '1px solid',
+              borderColor: categoryFilter === 'all' ? 'var(--accent-crimson)' : 'transparent',
+              cursor: 'pointer',
+              transition: 'all 0.15s'
+            }}
+          >
+            Semua Antrian ({categoryCounts.all})
+          </button>
+
+          {CATEGORY_OPTIONS.map(cat => {
+            const isActive = categoryFilter === String(cat.id);
+            const count = categoryCounts[cat.id] || 0;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setCategoryFilter(String(cat.id));
+                  setTargetCategory(String(cat.id));
+                }}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '0.74rem',
+                  fontWeight: isActive ? '700' : '500',
+                  background: isActive ? 'rgba(212,175,55,0.2)' : 'rgba(255,255,255,0.04)',
+                  color: isActive ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                  border: '1px solid',
+                  borderColor: isActive ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s'
+                }}
+              >
+                {cat.name} ({count})
+              </button>
+            );
+          })}
+        </div>
 
         {/* Crawled List Table */}
         <div className="table-responsive" style={{ overflowX: 'auto' }}>
@@ -371,21 +564,23 @@ export default function CrawlerStudio({ navigate }) {
                 <th style={{ padding: '10px 14px', width: '40px' }}>Pilih</th>
                 <th style={{ padding: '10px 14px' }}>Judul Berita</th>
                 <th style={{ padding: '10px 14px' }}>Sumber Feed</th>
-                <th style={{ padding: '10px 14px' }}>Kategori Otomatis</th>
+                <th style={{ padding: '10px 14px' }}>Kategori Berita</th>
                 <th style={{ padding: '10px 14px' }}>Waktu Terbit</th>
                 <th style={{ padding: '10px 14px' }}>Status</th>
                 <th style={{ padding: '10px 14px', textAlign: 'right' }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {crawledArticles.length === 0 ? (
+              {filteredArticles.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    Belum ada artikel hasil crawl. Pilih salah satu sumber di atas untuk memulai crawling!
+                    {categoryFilter === 'all' 
+                      ? 'Belum ada artikel hasil crawl. Pilih salah satu sumber di atas untuk memulai crawling!'
+                      : 'Tidak ada berita di antrian dengan kategori ini. Ubah filter kategori untuk melihat berita lainnya.'}
                   </td>
                 </tr>
               ) : (
-                crawledArticles.map((item) => {
+                filteredArticles.map((item) => {
                   const isSelected = selectedIds.includes(item.id);
                   const isImported = item.status === 'imported';
                   return (
@@ -408,22 +603,31 @@ export default function CrawlerStudio({ navigate }) {
                         {item.source_feed}
                       </td>
 
+                      {/* Interactive Inline Category Selector */}
                       <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '5px',
-                          padding: '3px 9px',
-                          borderRadius: '4px',
-                          fontSize: '0.73rem',
-                          fontWeight: '700',
-                          background: 'rgba(212, 175, 55, 0.12)',
-                          color: 'var(--accent-gold)',
-                          border: '1px solid rgba(212, 175, 55, 0.25)'
-                        }}>
-                          <Sparkles size={11} color="var(--accent-gold)" />
-                          {item.category_name || 'Investigasi & Kriminal'}
-                        </span>
+                        <select
+                          value={item.category_id || 1}
+                          disabled={isImported}
+                          onChange={(e) => handleItemCategoryChange(item.id, e.target.value)}
+                          style={{
+                            background: '#0a0d14',
+                            border: '1px solid rgba(212, 175, 55, 0.35)',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            fontWeight: '700',
+                            color: 'var(--accent-gold)',
+                            cursor: isImported ? 'not-allowed' : 'pointer',
+                            outline: 'none'
+                          }}
+                          title="Klik untuk mengubah & menyinkronkan kategori berita ini"
+                        >
+                          {CATEGORY_OPTIONS.map(cat => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </option>
+                          ))}
+                        </select>
                       </td>
 
                       <td style={{ padding: '10px 14px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>

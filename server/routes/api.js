@@ -522,6 +522,32 @@ router.put('/crawler/articles/:id/category', (req, res) => {
   }
 });
 
+// Batch update category for multiple crawled articles
+router.put('/crawler/articles/batch-category', (req, res) => {
+  try {
+    const { ids, category_id } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'Daftar ID artikel tidak boleh kosong' });
+    }
+    const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(category_id);
+    if (!cat) return res.status(400).json({ success: false, error: 'Kategori tidak valid' });
+
+    const updateStmt = db.prepare('UPDATE crawled_articles SET category_id = ?, category_name = ? WHERE id = ?');
+    for (const id of ids) {
+      updateStmt.run(cat.id, cat.name, id);
+    }
+
+    res.json({
+      success: true,
+      message: `Kategori ${ids.length} artikel berhasil disinkronkan ke ${cat.name}`,
+      category_id: cat.id,
+      category_name: cat.name
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ==========================================
 // 7. LIVE & HISTORICAL VISITOR ANALYTICS
 // ==========================================
