@@ -38,12 +38,96 @@ try {
 }
 
 /**
- * Fetch and crawl news items from an RSS feed or URL, automatically detecting category for each item
+ * Save an individual crawled item directly to the server's main news database (articles table).
+ * Guarantees duplicate prevention and proper categorization.
+ * 
+ * @param {object} item - Crawled article item
+ * @returns {object} { success: boolean, newlyInserted?: boolean, alreadyExists?: boolean, articleId?: number }
+ */
+function saveArticleToServer(item) {
+  if (!item || !item.title || !item.link) {
+    return { success: false, reason: 'Judul atau link tidak valid' };
+  }
+
+  // 1. Guard against duplicates: Check if already exists in published articles
+  const existing = db.prepare(`
+    SELECT id, title, slug, category_name FROM articles 
+    WHERE (source_url IS NOT NULL AND source_url != '' AND source_url = ?)
+       OR LOWER(TRIM(title)) = LOWER(TRIM(?))
+    LIMIT 1
+  `).get(item.link, item.title);
+
+  if (existing) {
+    try {
+      db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE link = ?").run(item.link);
+    } catch (e) {}
+    return { success: true, alreadyExists: true, articleId: existing.id };
+  }
+
+  // 2. Resolve official category row
+  let targetCatId = item.category_id || 1;
+  const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(Number(targetCatId)) || {
+    id: 1,
+    name: item.category_name || 'Investigasi & Kriminal'
+  };
+
+  // 3. Generate URL slug
+  const baseSlug = item.title
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .substring(0, 90);
+  const slug = (baseSlug || 'berita') + '-' + Math.floor(1000 + Math.random() * 9000);
+
+  // 4. Clean content formatting
+  let cleanContent = item.content || item.summary || item.title;
+  if (!cleanContent.includes('<p>')) {
+    cleanContent = `<p>${cleanContent.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br/>')}</p>`;
+  }
+
+  const insertArticle = db.prepare(`
+    INSERT INTO articles (
+      title, slug, summary, content, category_id, category_name, tags,
+      image_url, author, source_url, source_name, is_featured, is_breaking, views, reactions, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '{"sedih":0,"terkejut":0,"berduka":0,"kritis":0,"kagum":0}', 'published')
+  `);
+
+  const result = insertArticle.run(
+    item.title.trim(),
+    slug,
+    (item.summary || item.title).trim().substring(0, 300),
+    cleanContent,
+    category.id,
+    category.name,
+    'Siber, Sindikasi, Terkini',
+    item.image_url || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
+    item.source_feed || 'Redaksi Sindikasi',
+    item.link,
+    item.source_feed || 'Sindikasi Media'
+  );
+
+  try {
+    db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE link = ?").run(item.link);
+  } catch (e) {}
+
+  return {
+    success: true,
+    newlyInserted: true,
+    articleId: result.lastInsertRowid,
+    slug,
+    category_name: category.name
+  };
+}
+
+/**
+ * Fetch and crawl news items from an RSS feed or URL, automatically saving directly to server database
  * @param {string} sourceUrl - RSS feed URL or website
  * @param {string} sourceName - Source display name
- * @returns {Promise<Array>} Array of crawled articles
+ * @param {object} options - Options { autoSaveToArticles: boolean }
+ * @returns {Promise<object>} Crawl and save summary
  */
-async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
+async function crawlFeed(sourceUrl, sourceName = 'RSS Feed', options = {}) {
+  const autoSaveToArticles = options.autoSaveToArticles !== false; // Default true: save to server articles
   const crawledItems = [];
 
   try {
@@ -149,7 +233,7 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     }
   }
 
-  // Save unique crawled articles to database with detected category & check against articles table
+  // 1. Save unique crawled articles to crawled_articles staging table
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO crawled_articles (
       source_feed, title, link, summary, content, image_url, pub_date, category_id, category_name, status
@@ -162,20 +246,12 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     WHERE link = ? AND (category_id IS NULL OR category_name IS NULL)
   `);
 
-  const checkDuplicateStmt = db.prepare(`
-    SELECT id FROM articles 
-    WHERE (source_url IS NOT NULL AND source_url != '' AND source_url = ?)
-       OR LOWER(TRIM(title)) = LOWER(TRIM(?))
-    LIMIT 1
-  `);
-
   let insertedCount = 0;
+  let savedToArticlesCount = 0;
+  let alreadyExistingCount = 0;
+
   for (const item of crawledItems) {
     if (item.title && item.link) {
-      // Check if this article already exists in published articles (Manajemen Berita)
-      const isAlreadyInArticles = checkDuplicateStmt.get(item.link, item.title);
-      const initialStatus = isAlreadyInArticles ? 'imported' : 'pending';
-
       const res = insertStmt.run(
         item.source_feed,
         item.title,
@@ -186,16 +262,21 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
         item.pub_date || new Date().toISOString(),
         item.category_id,
         item.category_name,
-        initialStatus
+        'pending'
       );
       if (res.changes > 0) {
         insertedCount++;
       } else {
-        // If already exists in crawled_articles, keep category updated
         updateCatStmt.run(item.category_id, item.category_name, item.link);
-        // If it now exists in articles, synchronize status to 'imported'
-        if (isAlreadyInArticles) {
-          db.prepare("UPDATE crawled_articles SET status = 'imported' WHERE link = ?").run(item.link);
+      }
+
+      // 2. Automatically save directly to server articles table (Manajemen Berita / Portal)
+      if (autoSaveToArticles) {
+        const saveRes = saveArticleToServer(item);
+        if (saveRes.newlyInserted) {
+          savedToArticlesCount++;
+        } else if (saveRes.alreadyExists) {
+          alreadyExistingCount++;
         }
       }
     }
@@ -208,7 +289,43 @@ async function crawlFeed(sourceUrl, sourceName = 'RSS Feed') {
     source: sourceName,
     totalFound: crawledItems.length,
     newItemsAdded: insertedCount,
+    savedToArticles: savedToArticlesCount,
+    alreadyExisting: alreadyExistingCount,
     items: crawledItems
+  };
+}
+
+/**
+ * Bulk save all pending items in crawled_articles directly to the server articles table
+ * @param {number} limit - Maximum items to process in one batch
+ * @returns {object} Summary of bulk save operation
+ */
+function saveAllPendingCrawledArticles(limit = 1000) {
+  const pending = db.prepare(`
+    SELECT * FROM crawled_articles 
+    WHERE status != 'imported'
+    ORDER BY id DESC 
+    LIMIT ?
+  `).all(limit);
+
+  let savedCount = 0;
+  let alreadyCount = 0;
+
+  for (const item of pending) {
+    const res = saveArticleToServer(item);
+    if (res.newlyInserted) {
+      savedCount++;
+    } else if (res.alreadyExists) {
+      alreadyCount++;
+    }
+  }
+
+  syncCrawledWithArticles();
+
+  return {
+    totalProcessed: pending.length,
+    savedCount,
+    alreadyCount
   };
 }
 
@@ -402,6 +519,8 @@ async function importCrawledArticle(crawledId, categoryId = 'auto', deepScrape =
 module.exports = {
   crawlFeed,
   importCrawledArticle,
+  saveArticleToServer,
+  saveAllPendingCrawledArticles,
   syncCrawledWithArticles
 };
 

@@ -56,6 +56,8 @@ export default function CrawlerStudio({ navigate }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [importing, setImporting] = useState(false);
+  const [isSavingAllPending, setIsSavingAllPending] = useState(false);
+  const [autoSaveToServer, setAutoSaveToServer] = useState(true);
   const [importResultMsg, setImportResultMsg] = useState('');
   const [previewItem, setPreviewItem] = useState(null);
 
@@ -154,7 +156,7 @@ export default function CrawlerStudio({ navigate }) {
     fetch('/api/crawler/fetch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: targetUrl, name: targetName })
+      body: JSON.stringify({ url: targetUrl, name: targetName, autoSave: autoSaveToServer })
     })
       .then(res => res.json())
       .then(data => {
@@ -251,6 +253,26 @@ export default function CrawlerStudio({ navigate }) {
       })
       .catch(err => {
         setIsSyncingWithArticles(false);
+        alert('Kesalahan jaringan: ' + err.message);
+      });
+  };
+
+  // Bulk save all pending crawled news directly into server database
+  const handleSaveAllPending = () => {
+    setIsSavingAllPending(true);
+    fetch('/api/crawler/save-all-pending', { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        setIsSavingAllPending(false);
+        if (data.success) {
+          alert(data.message);
+          loadData();
+        } else {
+          alert('Gagal menyimpan berita: ' + (data.error || data.message));
+        }
+      })
+      .catch(err => {
+        setIsSavingAllPending(false);
         alert('Kesalahan jaringan: ' + err.message);
       });
   };
@@ -1059,7 +1081,7 @@ export default function CrawlerStudio({ navigate }) {
             justifyContent: 'space-between'
           }}>
             <span>
-              ✅ Crawl dari <strong>{crawlResult.source}</strong> selesai: Ditemukan {crawlResult.totalFound} berita ({crawlResult.newItemsAdded} baru ditambahkan ke antrian).
+              ✅ Crawl dari <strong>{crawlResult.source}</strong> selesai: Ditemukan {crawlResult.totalFound} berita. Sebanyak <strong>{crawlResult.savedToArticles !== undefined ? crawlResult.savedToArticles : crawlResult.newItemsAdded} berita baru</strong> otomatis tersimpan permanen di database server portal!
             </span>
           </div>
         )}
@@ -1089,6 +1111,50 @@ export default function CrawlerStudio({ navigate }) {
             <h3 className="display-font" style={{ fontSize: '1rem', fontWeight: '800', color: '#fff' }}>
               Antrian Berita Hasil Crawl ({crawledArticles.length})
             </h3>
+
+            {/* Server Auto-Save Active Badge */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#34d399',
+              padding: '4px 10px',
+              borderRadius: '12px',
+              fontSize: '0.74rem',
+              fontWeight: '700'
+            }}>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34d399' }}></span>
+              Server Auto-Save: AKTIF
+            </div>
+
+            {/* Save All Pending to Server Button */}
+            {totalPendingCount > 0 && (
+              <button
+                type="button"
+                onClick={handleSaveAllPending}
+                disabled={isSavingAllPending}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: '1px solid #10b981',
+                  color: '#fff',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: isSavingAllPending ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s'
+                }}
+                title="Simpan seluruh berita antrian pending langsung ke database server portal"
+              >
+                <CheckCircle2 size={13} />
+                <span>{isSavingAllPending ? 'Menyimpan...' : `⚡ Simpan Semua Pending (${totalPendingCount}) ke Server`}</span>
+              </button>
+            )}
             
             {/* Master Toggle Button */}
             <button

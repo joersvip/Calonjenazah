@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { scrapeNewsFromUrl } = require('../services/scraper');
-const { crawlFeed, importCrawledArticle, syncCrawledWithArticles } = require('../services/crawler');
+const { 
+  crawlFeed, 
+  importCrawledArticle, 
+  saveAllPendingCrawledArticles, 
+  syncCrawledWithArticles 
+} = require('../services/crawler');
 const { 
   extractClientIp, resolveGeo, resolveGeoOnline, parseUserAgent, 
   logVisit, getVisitorAnalytics, activeVisitors, getCleanActiveVisitors 
@@ -807,16 +812,35 @@ router.delete('/crawler/sources/:id', (req, res) => {
   }
 });
 
-// Run crawl on a source URL
+// Run crawl on a source URL (automatically saves to server news database)
 router.post('/crawler/fetch', async (req, res) => {
   try {
-    const { url, name } = req.body;
+    const { url, name, autoSave = true } = req.body;
     if (!url) {
       return res.status(400).json({ success: false, error: 'URL sumber wajib diisi' });
     }
 
-    const result = await crawlFeed(url, name);
-    res.json({ success: true, ...result });
+    const result = await crawlFeed(url, name, { autoSaveToArticles: autoSave !== false });
+    res.json({
+      success: true,
+      message: `Berhasil merayapi ${result.totalFound} berita. Sebanyak ${result.savedToArticles || 0} berita baru berhasil disimpan permanen ke server portal!`,
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Bulk save all pending crawled news directly into server database articles table
+router.post('/crawler/save-all-pending', (req, res) => {
+  try {
+    const limit = Number(req.body.limit) || 1000;
+    const summary = saveAllPendingCrawledArticles(limit);
+    res.json({
+      success: true,
+      message: `Berhasil memproses ${summary.totalProcessed} berita antrian. ${summary.savedCount} berita baru tersimpan permanen di server portal (${summary.alreadyCount} sudah ada di database).`,
+      ...summary
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -853,7 +877,7 @@ router.get('/crawler/articles', (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY c.created_at DESC LIMIT 300';
+    query += ' ORDER BY c.created_at DESC LIMIT 1000';
 
     const articles = db.prepare(query).all(...params);
 

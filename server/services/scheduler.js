@@ -127,27 +127,15 @@ async function runAutoCrawlJob(isManual = false) {
       sources = db.prepare('SELECT * FROM crawler_sources LIMIT 10').all();
     }
 
-    let totalFetched = 0;
-    let totalImported = 0;
+    let totalFound = 0;
+    let totalSaved = 0;
     const errors = [];
 
     for (const src of sources) {
       try {
-        const result = await crawlFeed(src.url, src.name);
-        totalFetched += result.savedCount || 0;
-
-        // If configured to automatically publish, import pending items from this source
-        if (config.action === 'auto_publish') {
-          const pendingItems = db.prepare("SELECT id FROM crawled_articles WHERE status = 'pending' AND source_feed = ? LIMIT ?")
-            .all(src.name, config.maxPerSource || 10);
-
-          for (const item of pendingItems) {
-            try {
-              await importCrawledArticle(item.id, 'auto', false);
-              totalImported++;
-            } catch (impErr) {}
-          }
-        }
+        const result = await crawlFeed(src.url, src.name, { autoSaveToArticles: true });
+        totalFound += result.totalFound || 0;
+        totalSaved += result.savedToArticles || 0;
 
         // Update source last_crawled_at
         db.prepare('UPDATE crawler_sources SET last_crawled_at = CURRENT_TIMESTAMP WHERE id = ?').run(src.id);
@@ -158,10 +146,7 @@ async function runAutoCrawlJob(isManual = false) {
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     const nowIso = new Date().toISOString();
-    let resultSummary = `Berhasil merayapi ${sources.length} sumber berita dalam ${duration} detik. Diperoleh ${totalFetched} berita baru`;
-    if (config.action === 'auto_publish') {
-      resultSummary += ` (${totalImported} langsung diterbitkan ke portal)`;
-    }
+    let resultSummary = `Berhasil merayapi ${sources.length} sumber berita dalam ${duration} detik. Ditemukan ${totalFound} berita, ${totalSaved} berita baru otomatis tersimpan di server portal.`;
     if (errors.length > 0) {
       resultSummary += ` [${errors.length} sumber dilewati]`;
     }
