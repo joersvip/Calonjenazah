@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Radio, History, Link, Cpu, 
   FileText, Settings, ExternalLink, LogOut, ShieldAlert,
-  Users, MapPin, Menu, X, Lock, Sparkles
+  Users, MapPin, Menu, X, Lock, Sparkles, MessageSquare
 } from 'lucide-react';
 import { subscribeAdminLive } from '../../services/telemetry';
 
@@ -38,6 +38,9 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
       .then(data => {
         if (data.success && data.token) {
           localStorage.setItem('calonjenazah_token', data.token);
+          if (data.user) {
+            localStorage.setItem('calonjenazah_admin_user', JSON.stringify(data.user));
+          }
           setToken(data.token);
         } else {
           setLoginError(data.error || 'Login gagal');
@@ -52,6 +55,7 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
 
   const handleLogout = () => {
     localStorage.removeItem('calonjenazah_token');
+    localStorage.removeItem('calonjenazah_admin_user');
     setToken(null);
   };
 
@@ -198,12 +202,14 @@ export default function AdminLayout({ activeTab, setActiveTab, navigate, childre
 
   const navItems = [
     { id: 'overview', label: 'Ringkasan Portal', icon: LayoutDashboard },
+    { id: 'admin-chat', label: 'Chat Antar Admin', icon: MessageSquare, highlight: true },
     { id: 'live-tracking', label: 'Peta Live Pengunjung', icon: Radio, badge: liveVisitors.length || '0' },
     { id: 'history', label: 'Riwayat & Audit Log IP', icon: History },
-    { id: 'reupload', label: 'Re-Upload via Link', icon: Link, highlight: true },
+    { id: 'reupload', label: 'Re-Upload via Link', icon: Link },
     { id: 'crawler', label: 'Web Crawler & RSS', icon: Cpu },
     { id: 'articles', label: 'Manajemen Berita', icon: FileText },
     { id: 'seo', label: 'Optimasi SEO Otomatis', icon: Sparkles },
+    { id: 'admin-users', label: 'Manajemen Admin', icon: Users },
     { id: 'settings', label: 'Pengaturan Web', icon: Settings }
   ];
 

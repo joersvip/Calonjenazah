@@ -6,6 +6,7 @@ const { crawlFeed, importCrawledArticle } = require('../services/crawler');
 const { extractClientIp, resolveGeo, parseUserAgent, logVisit, getVisitorAnalytics, activeVisitors } = require('../services/tracker');
 const { getSeoStatus, auditAndOptimizeSeo } = require('../services/seo');
 const { getAutoCrawlConfig, saveAutoCrawlConfig, runAutoCrawlJob } = require('../services/scheduler');
+const { getChatHistory, getOnlineAdminsList } = require('../services/adminChat');
 
 // ==========================================
 // 1. PUBLIC ARTICLES & CONTENT ROUTES
@@ -241,27 +242,206 @@ router.post('/analytics/track', (req, res) => {
 });
 
 // ==========================================
-// 3. ADMIN AUTHENTICATION
+// 3. ADMIN AUTHENTICATION & MANAGEMENT
 // ==========================================
 
 router.post('/auth/login', (req, res) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username dan password wajib diisi' });
+    }
+
+    // 1. Check in admins table
+    const admin = db.prepare("SELECT * FROM admins WHERE username = ? AND is_active = 1").get(username);
+    if (admin && admin.password === password) {
+      db.prepare("UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = ?").run(admin.id);
+      return res.json({
+        success: true,
+        token: 'auth_token_' + Buffer.from(`${admin.username}:${admin.id}:${Date.now()}`).toString('base64'),
+        user: {
+          id: admin.id,
+          username: admin.username,
+          display_name: admin.display_name,
+          role: admin.role,
+          email: admin.email,
+          avatar_url: admin.avatar_url
+        }
+      });
+    }
+
+    // 2. Fallback to settings
     const savedUser = db.prepare("SELECT value FROM settings WHERE key = 'admin_username'").get();
     const savedPass = db.prepare("SELECT value FROM settings WHERE key = 'admin_password'").get();
-
     const expectedUser = savedUser ? savedUser.value : 'admin';
     const expectedPass = savedPass ? savedPass.value : 'admin123';
 
     if (username === expectedUser && password === expectedPass) {
       return res.json({
         success: true,
-        token: 'auth_token_' + Buffer.from(`${username}:${Date.now()}`).toString('base64'),
-        user: { username, role: 'Super Admin' }
+        token: 'auth_token_' + Buffer.from(`${username}:1:${Date.now()}`).toString('base64'),
+        user: {
+          id: 1,
+          username: 'admin',
+          display_name: 'Dewan Redaksi Utama',
+          role: 'Super Admin',
+          email: 'redaksi@calonjenazah.com'
+        }
       });
     }
 
     res.status(401).json({ success: false, error: 'Username atau password salah' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all admin users
+router.get('/admin/users', (req, res) => {
+  try {
+    const admins = db.prepare(`
+      SELECT id, username, display_name, role, email, avatar_url, is_active, last_login, created_at
+      FROM admins
+      ORDER BY id ASC
+    `).all();
+
+    res.json({ success: true, admins });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create new admin user
+router.post('/admin/users', (req, res) => {
+  try {
+    const { username, password, display_name, role = 'Editor', email, avatar_url } = req.body;
+    if (!username || !password || !display_name) {
+      return res.status(400).json({ success: false, error: 'Username, password, dan nama lengkap wajib diisi' });
+    }
+
+    const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
+    const existing = db.prepare("SELECT id FROM admins WHERE username = ?").get(cleanUsername);
+    if (existing) {
+      return res.status(400).json({ success: false, error: `Username "${cleanUsername}" sudah digunakan oleh admin lain` });
+    }
+
+    const insert = db.prepare(`
+      INSERT INTO admins (username, password, display_name, role, email, avatar_url)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = insert.run(
+      cleanUsername,
+      password.trim(),
+      display_name.trim(),
+      role || 'Editor',
+      email || '',
+      avatar_url || ''
+    );
+
+    res.json({
+      success: true,
+      message: `Akun admin "${display_name}" berhasil dibuat`,
+      id: result.lastInsertRowid
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update admin user
+router.put('/admin/users/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { display_name, role, email, avatar_url, is_active, password } = req.body;
+
+    const existing = db.prepare("SELECT * FROM admins WHERE id = ?").get(id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Akun admin tidak ditemukan' });
+    }
+
+    let query = `
+      UPDATE admins SET 
+        display_name = ?, role = ?, email = ?, avatar_url = ?, is_active = ?
+    `;
+    const params = [
+      display_name || existing.display_name,
+      role || existing.role,
+      email !== undefined ? email : existing.email,
+      avatar_url !== undefined ? avatar_url : existing.avatar_url,
+      is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active
+    ];
+
+    if (password && password.trim()) {
+      query += `, password = ?`;
+      params.push(password.trim());
+    }
+
+    query += ` WHERE id = ?`;
+    params.push(id);
+
+    db.prepare(query).run(...params);
+    res.json({ success: true, message: 'Data akun admin berhasil diperbarui' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete admin user
+router.delete('/admin/users/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const target = db.prepare("SELECT * FROM admins WHERE id = ?").get(id);
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Akun admin tidak ditemukan' });
+    }
+
+    // Safety check: Prevent deleting the last Super Admin
+    if (target.role === 'Super Admin') {
+      const superAdminCount = db.prepare("SELECT COUNT(*) as count FROM admins WHERE role = 'Super Admin'").get().count;
+      if (superAdminCount <= 1) {
+        return res.status(400).json({ success: false, error: 'Tidak dapat menghapus satu-satunya Super Admin dalam sistem' });
+      }
+    }
+
+    db.prepare("DELETE FROM admins WHERE id = ?").run(id);
+    res.json({ success: true, message: `Akun admin "${target.display_name}" berhasil dihapus` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// ADMIN CHAT ENDPOINTS (REALTIME & HISTORY)
+// ==========================================
+
+// Get recent chat messages history
+router.get('/admin/chat/messages', (req, res) => {
+  try {
+    const { limit = 80 } = req.query;
+    const messages = getChatHistory(Number(limit));
+    res.json({ success: true, messages });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get online admins list
+router.get('/admin/chat/online', (req, res) => {
+  try {
+    const online = getOnlineAdminsList();
+    res.json({ success: true, online });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete single chat message
+router.delete('/admin/chat/messages/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare("DELETE FROM admin_messages WHERE id = ?").run(id);
+    res.json({ success: true, message: 'Pesan berhasil dihapus' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

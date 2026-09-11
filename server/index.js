@@ -6,6 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const apiRoutes = require('./routes/api');
 const { setupSocketTracking } = require('./services/tracker');
+const { setupAdminChatSocket } = require('./services/adminChat');
 const { initScheduler } = require('./services/scheduler');
 const { generateSitemapXml, generateRobotsTxt, generateRssFeed } = require('./services/seo');
 const db = require('./db');
@@ -31,6 +32,7 @@ app.set('trust proxy', true);
 
 // Initialize Socket.io tracking
 setupSocketTracking(io);
+setupAdminChatSocket(io);
 
 // Initialize Background Automation Scheduler (Auto-Crawl & Periodic SEO)
 initScheduler();

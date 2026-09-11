@@ -112,6 +112,31 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS admins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    role TEXT DEFAULT 'Editor', -- 'Super Admin', 'Redaktur Pelaksana', 'Editor', 'Jurnalis'
+    email TEXT,
+    avatar_url TEXT,
+    is_active INTEGER DEFAULT 1,
+    last_login DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS admin_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER,
+    sender_username TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    sender_role TEXT DEFAULT 'Editor',
+    sender_avatar TEXT,
+    message TEXT NOT NULL,
+    reply_to_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Safe column migrations for existing databases
@@ -137,6 +162,22 @@ if (catCount.count === 0) {
   for (const cat of defaultCats) {
     insertCat.run(...cat);
   }
+}
+
+// Seed default admin if empty
+const adminCount = db.prepare('SELECT COUNT(*) as count FROM admins').get();
+if (adminCount.count === 0) {
+  const insertAdmin = db.prepare(`
+    INSERT INTO admins (username, password, display_name, role, email) 
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  insertAdmin.run(
+    'admin',
+    'admin123',
+    'Dewan Redaksi Utama',
+    'Super Admin',
+    'redaksi@calonjenazah.com'
+  );
 }
 
 // Seed default crawler sources

@@ -15,6 +15,8 @@ import CrawlerStudio from './pages/admin/CrawlerStudio';
 import ArticleManagement from './pages/admin/ArticleManagement';
 import SiteSettings from './pages/admin/SiteSettings';
 import SeoOptimization from './pages/admin/SeoOptimization';
+import AdminManagement from './pages/admin/AdminManagement';
+import AdminChat from './pages/admin/AdminChat';
 
 import { reportNavigation } from './services/telemetry';
 
@@ -72,6 +74,8 @@ export default function App() {
         case 'crawler': return <CrawlerStudio />;
         case 'articles': return <ArticleManagement />;
         case 'seo': return <SeoOptimization navigate={navigate} />;
+        case 'admin-users': return <AdminManagement />;
+        case 'admin-chat': return <AdminChat />;
         case 'settings': return <SiteSettings />;
         default: return <DashboardOverview />;
       }
